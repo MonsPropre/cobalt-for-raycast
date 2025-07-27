@@ -21,16 +21,16 @@
   "license": "MIT",
   "commands": [
     {
+      "name": "about",
+      "title": "About",
+      "description": "Cobalt for Raycast",
+      "mode": "view"
+    },
+    {
       "name": "url-to-file",
       "title": "Convert URL to File",
       "subtitle": "Cobalt for Raycast",
       "description": "Convert URL to File",
-      "mode": "view"
-    },
-    {
-      "name": "about",
-      "title": "About",
-      "description": "Cobalt for Raycast",
       "mode": "view"
     }
   ],

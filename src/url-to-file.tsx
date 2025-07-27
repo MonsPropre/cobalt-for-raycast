@@ -8,31 +8,19 @@ import {
     Toast,
     confirmAlert,
     open,
-    popToRoot,
+    popToRoot, List,
 } from "@raycast/api";
 import { useForm, FormValidation, useFetch } from "@raycast/utils";
 import { useEffect } from "react";
 
 import * as Errors from "./utils/Error.json";
+import {FormValues, Instance} from "./utils/Types";
 
 type ErrorKey = keyof typeof Errors;
 
 function getErrorMessage(key: ErrorKey) {
     return Errors[key];
 }
-
-type FormValues = {
-    url: string;
-    downloadMode: string;
-    instance: string;
-};
-
-type Instance = {
-    id: string;
-    name: string;
-    url: string;
-    apiKey?: string;
-};
 
 async function download(
     values: FormValues,
@@ -41,107 +29,103 @@ async function download(
 ) {
     const apiUrl = instance?.url;
 
-    console.log({
-        apiUrl,
-        cobaltInstance,
-        apiKey: instance?.apiKey
-    })
+    const apiKey = instance?.apiKey
 
-    // await showToast({
-    //     style: Toast.Style.Animated,
-    //     title: "Downloading",
-    // });
-    // console.log({
-    //     "Content-Type": "application/json",
-    //     Accept: "application/json",
-    //     ...(cobaltInstance === "custom" && cobaltInstanceUseApiKey ? { Authorization: `Api-Key ${apiKey}` } : {}),
-    // });
-    // await fetch(apiUrl, {
-    //     method: "POST",
-    //     headers: {
-    //         "Content-Type": "application/json",
-    //         Accept: "application/json",
-    //         ...(instance?.apiKey !== null ? { Authorization: `Api-Key ${apiKey}` } : {}),
-    //     },
-    //     body: JSON.stringify({
-    //         url: values.url,
-    //         downloadMode: values.downloadMode,
-    //         filenameStyle: "nerdy",
-    //     }),
-    //     signal: AbortSignal.timeout(2500),
-    // })
-    //     .then(async (response) => {
-    //         const resJson = await response.json();
-    //         if (!response.ok) {
-    //             throw resJson;
-    //         }
-    //         return resJson;
-    //     })
-    //     .then(async (data) => {
-    //         if (data && data.status === "tunnel") {
-    //             await showToast({
-    //                 style: Toast.Style.Animated,
-    //                 title: "Tunnel created",
-    //                 message: `Tunnel ${new URL(data.url).searchParams.get("id")} created.`,
-    //             });
-    //             await confirmAlert({
-    //                 title: `Download ${data?.filename} ?`,
-    //                 primaryAction: {
-    //                     title: "Download",
-    //                     onAction: async () => {
-    //                         await showToast({
-    //                             style: Toast.Style.Success,
-    //                             title: "Download started",
-    //                         });
-    //                         await popToRoot();
-    //                         await open(data.url);
-    //                     },
-    //                 },
-    //                 dismissAction: {
-    //                     title: "Cancel",
-    //                     onAction: async () => {
-    //                         await showToast({
-    //                             style: Toast.Style.Failure,
-    //                             title: "Download canceled",
-    //                         });
-    //                     },
-    //                 },
-    //             });
-    //         }
-    //     })
-    //     .catch(async (error) => {
-    //         if (error?.status === "error") {
-    //             await showToast({
-    //                 style: Toast.Style.Failure,
-    //                 title: "Failed to download",
-    //                 message: getErrorMessage(error?.error?.code),
-    //             });
-    //             return;
-    //         }
-    //         if (error?.name) {
-    //             await showToast({
-    //                 style: Toast.Style.Failure,
-    //                 title: "Failed to download",
-    //                 message: getErrorMessage(error?.error?.code),
-    //             });
-    //             return;
-    //         }
-    //         console.error({
-    //             name: error.name,
-    //         });
-    //         await showToast({
-    //             style: Toast.Style.Failure,
-    //             title: error?.name || "Failed to download",
-    //             message: getErrorMessage(error?.message),
-    //         });
-    //     });
+    await showToast({
+        style: Toast.Style.Animated,
+        title: "Downloading",
+    });
+    console.log({
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        ...(apiKey !== undefined ? { Authorization: `Api-Key ${apiKey}` } : {}),
+    });
+    await fetch(apiUrl, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+    ...(apiKey !== undefined ? { Authorization: `Api-Key ${apiKey}` } : {}),
+        },
+        body: JSON.stringify({
+            url: values.url,
+            downloadMode: values.downloadMode,
+            filenameStyle: "nerdy",
+        }),
+        signal: AbortSignal.timeout(2500),
+    })
+        .then(async (response) => {
+            const resJson = await response.json();
+            if (!response.ok) {
+                throw resJson;
+            }
+            return resJson;
+        })
+        .then(async (data) => {
+            if (data && data.status === "tunnel") {
+                await showToast({
+                    style: Toast.Style.Animated,
+                    title: "Tunnel created",
+                    message: `Tunnel ${new URL(data.url).searchParams.get("id")} created.`,
+                });
+                await confirmAlert({
+                    title: `Download ${data?.filename} ?`,
+                    primaryAction: {
+                        title: "Download",
+                        onAction: async () => {
+                            await showToast({
+                                style: Toast.Style.Success,
+                                title: "Download started",
+                            });
+                            await popToRoot();
+                            await open(data.url);
+                        },
+                    },
+                    dismissAction: {
+                        title: "Cancel",
+                        onAction: async () => {
+                            await showToast({
+                                style: Toast.Style.Failure,
+                                title: "Download canceled",
+                            });
+                        },
+                    },
+                });
+            }
+        })
+        .catch(async (error) => {
+            if (error?.status === "error") {
+                await showToast({
+                    style: Toast.Style.Failure,
+                    title: "Failed to download",
+                    message: getErrorMessage(error?.error?.code),
+                });
+                return;
+            }
+            if (error?.name) {
+                await showToast({
+                    style: Toast.Style.Failure,
+                    title: "Failed to download",
+                    message: getErrorMessage(error?.error?.code),
+                });
+                return;
+            }
+            console.error({
+                name: error.name,
+            });
+            await showToast({
+                style: Toast.Style.Failure,
+                title: error?.name || "Failed to download",
+                message: getErrorMessage(error?.message),
+            });
+        });
 }
 
 export default function Command() {
     const { cobaltInstance, cobaltInstanceUrl, cobaltInstanceUseApiKey, cobaltInstanceApiKey } = getPreferenceValues();
 
     const { isLoading, data } = useFetch<Instance[]>(
-        "https://raw.githubusercontent.com/monspropre/cobalt-for-raycast/main/assets/instances.json"
+        "https://raw.githubusercontent.com/MonsPropre/cobalt-for-raycast/main/assets/instances.json"
     );
 
     // Parse 'data' string JSON if needed
@@ -203,12 +187,6 @@ export default function Command() {
 
     return (
         <Form
-            searchBarAccessory={
-                <Form.LinkAccessory
-                    text="Supported Sites"
-                    target="https://github.com/baldy/cobalt-for-raycast#supported-sites"
-                />
-            }
             actions={
                 <ActionPanel>
                     <Action.SubmitForm title="Submit" onSubmit={handleSubmit} />
@@ -240,4 +218,16 @@ export default function Command() {
             </Form.Dropdown>
         </Form>
     );
+}
+
+
+function SupportedSites() {
+    return (
+        <List>
+            <List.Section title="Supported Sites">
+                <List.Item title="Youtube" />
+                <List.Item title="Bilibili" />
+            </List.Section>
+        </List>
+    )
 }
