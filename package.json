@@ -32,25 +32,22 @@
       "subtitle": "Cobalt for Raycast",
       "description": "Convert URL to File",
       "mode": "view"
+    },
+    {
+      "name": "instances",
+      "title": "Instances",
+      "description": "Cobalt Instances",
+      "mode": "view"
     }
   ],
   "preferences": [
     {
-      "name": "cobaltInstance",
-      "title": "Instance",
-      "description": "Cobalt Instance",
-      "type": "dropdown",
-      "required": true,
-      "data": [
-        {
-          "title": "Public Instance",
-          "value": "public-instance"
-        },
-        {
-          "title": "Custom",
-          "value": "custom"
-        }
-      ]
+      "name": "enableCustomInstance",
+      "title": "Enable Custom Instance",
+      "description": "Enable Custom Instance",
+      "type": "checkbox",
+      "required": false,
+      "label": "Enable"
     },
     {
       "name": "cobaltInstanceUrl",
@@ -72,6 +69,13 @@
       "title": "Cobalt Instance API Key",
       "description": "Cobalt Instance API Key",
       "type": "password",
+      "required": false
+    },
+    {
+      "name": "instanceSourceUrl",
+      "title": "Instances Source URL",
+      "description": "Instances Source URL",
+      "type": "textfield",
       "required": false
     }
   ],

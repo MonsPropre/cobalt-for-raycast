@@ -8,10 +8,11 @@ import {
     Toast,
     confirmAlert,
     open,
-    popToRoot, List,
+    popToRoot,
+    Icon
 } from "@raycast/api";
-import { useForm, FormValidation, useFetch } from "@raycast/utils";
-import { useEffect } from "react";
+import {useForm, FormValidation, useFetch} from "@raycast/utils";
+import {useEffect} from "react";
 
 import * as Errors from "./utils/Error.json";
 import {FormValues, Instance} from "./utils/Types";
@@ -24,28 +25,21 @@ function getErrorMessage(key: ErrorKey) {
 
 async function download(
     values: FormValues,
-    instance: Instance | undefined | { id: string; name: string; url: any; apiKey: any },
-    cobaltInstance: string
+    instance: Instance | undefined | { id: string; name: string; url: any; apiKey: any }
 ) {
     const apiUrl = instance?.url;
-
     const apiKey = instance?.apiKey
 
     await showToast({
         style: Toast.Style.Animated,
         title: "Downloading",
     });
-    console.log({
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        ...(apiKey !== undefined ? { Authorization: `Api-Key ${apiKey}` } : {}),
-    });
     await fetch(apiUrl, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
             Accept: "application/json",
-    ...(apiKey !== undefined ? { Authorization: `Api-Key ${apiKey}` } : {}),
+            ...(apiKey !== undefined ? {Authorization: `Api-Key ${apiKey}`} : {}),
         },
         body: JSON.stringify({
             url: values.url,
@@ -122,10 +116,19 @@ async function download(
 }
 
 export default function Command() {
-    const { cobaltInstance, cobaltInstanceUrl, cobaltInstanceUseApiKey, cobaltInstanceApiKey } = getPreferenceValues();
+    const {
+        enableCustomInstance,
+        cobaltInstanceUrl,
+        cobaltInstanceUseApiKey,
+        cobaltInstanceApiKey,
+        instanceSourceUrl = "https://raw.githubusercontent.com/MonsPropre/cobalt-for-raycast/main/assets/instances.json"
+    } = getPreferenceValues();
 
-    const { isLoading, data } = useFetch<Instance[]>(
-        "https://raw.githubusercontent.com/MonsPropre/cobalt-for-raycast/main/assets/instances.json"
+    const {data, revalidate} = useFetch<Instance[]>(
+        instanceSourceUrl,
+        {
+            keepPreviousData: true
+        }
     );
 
     // Parse 'data' string JSON if needed
@@ -141,18 +144,20 @@ export default function Command() {
         instances = data;
     }
 
-    const { handleSubmit, itemProps, reset } = useForm<FormValues>({
+    if (enableCustomInstance) {
+        instances.unshift({
+            id: "custom",
+            name: "Custom",
+            url: cobaltInstanceUrl,
+            apiKey: cobaltInstanceUseApiKey ? cobaltInstanceApiKey : undefined
+        })
+    }
+
+    const {handleSubmit, itemProps, reset} = useForm<FormValues>({
         async onSubmit(values) {
-            const cobaltCustomInstance = {
-                id: "custom",
-                name: "Custom",
-                url: cobaltInstanceUrl,
-                apiKey: Boolean(cobaltInstanceUseApiKey) ? cobaltInstanceApiKey : undefined
-            }
             await download(
                 values,
-                cobaltInstance === "public-instance" ? instances.find((instance) => instance.id === values.instance) : cobaltCustomInstance,
-                cobaltInstance
+                instances.find((instance) => instance.id === values.instance)
             );
         },
         validation: {
@@ -177,7 +182,7 @@ export default function Command() {
             try {
                 const url = new URL(text as string);
                 if (url.protocol === "http:" || url.protocol === "https:") {
-                    reset({ url: text, downloadMode: "auto" });
+                    reset({url: text, downloadMode: "auto"});
                 }
             } catch (_) {
                 // Do nothing
@@ -189,21 +194,27 @@ export default function Command() {
         <Form
             actions={
                 <ActionPanel>
-                    <Action.SubmitForm title="Submit" onSubmit={handleSubmit} />
+                    <Action.SubmitForm title="Submit" onSubmit={handleSubmit}/>
+                    <Action title="Reload Instances" onAction={async () => {
+                        const toast = await showToast({
+                            style: Toast.Style.Animated,
+                            title: "Reloading instances",
+                        });
+                        revalidate();
+                        setTimeout(async () => await toast.hide(), 50);
+                    }} icon={Icon.RotateClockwise}/>
                 </ActionPanel>
             }
         >
-            {cobaltInstance === "public-instance" && (
-                <Form.Dropdown title="Instance" {...itemProps.instance}>
-                    {instances.length > 0 ? (
-                        instances.map((instance) => (
-                            <Form.Dropdown.Item key={instance.url} value={instance.id} title={instance.name} />
-                        ))
-                    ) : (
-                        <Form.Dropdown.Item value="" title="(Aucune instance trouvée)" />
-                    )}
-                </Form.Dropdown>
-            )}
+            <Form.Dropdown title="Instance" {...itemProps.instance}>
+                {instances.length > 0 ? (
+                    instances.map((instance) => (
+                        <Form.Dropdown.Item key={instance.url + 1} value={instance.id} title={instance.name}/>
+                    ))
+                ) : (
+                    <Form.Dropdown.Item value="" title="(No instances found)"/>
+                )}
+            </Form.Dropdown>
 
             <Form.TextField
                 title="URL"
@@ -212,22 +223,10 @@ export default function Command() {
             />
 
             <Form.Dropdown title="Download Mode" storeValue {...itemProps.downloadMode}>
-                <Form.Dropdown.Item value="auto" title="Auto" icon="✨" />
-                <Form.Dropdown.Item value="audio" title="Audio" icon="🎶" />
-                <Form.Dropdown.Item value="mute" title="Mute" icon="🔇" />
+                <Form.Dropdown.Item value="auto" title="Auto" icon="✨"/>
+                <Form.Dropdown.Item value="audio" title="Audio" icon="🎶"/>
+                <Form.Dropdown.Item value="mute" title="Mute" icon="🔇"/>
             </Form.Dropdown>
         </Form>
     );
-}
-
-
-function SupportedSites() {
-    return (
-        <List>
-            <List.Section title="Supported Sites">
-                <List.Item title="Youtube" />
-                <List.Item title="Bilibili" />
-            </List.Section>
-        </List>
-    )
 }

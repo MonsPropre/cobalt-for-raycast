@@ -3,5 +3,10 @@
     "id": "b441fcae-aad5-4861-9c28-b43698bed0be",
     "name": "Meowing.de",
     "url": "https://cobalt-api.meowing.de"
+  },
+  {
+    "id": "12ea9bfc-d8c3-45c9-a5b7-ecc081586d65",
+    "name": "TEST",
+    "url": "https://cobalt.example.com"
   }
 ]

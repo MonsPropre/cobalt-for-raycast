@@ -6,9 +6,11 @@ export type FormValues = {
 
 export type Instance = {
     id: string;
+    version?: string;
     name: string;
     url: string;
     apiKey?: string;
+    frontendUrl?: string;
 };
 
 export type instanceMetadata = {

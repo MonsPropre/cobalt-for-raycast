@@ -61,5 +61,7 @@
   "error.api.youtube.drm": "this youtube video is protected by widevine DRM, so i can't download it. try a different link!",
   "error.api.youtube.no_session_tokens": "couldn't get required session tokens for youtube. this may be caused by a restriction on youtube's side. try again in a few seconds, but if this issue sticks, please report it!",
 
-  "TimeoutError": "couldn't access the processing instance within the given time. try again in a few seconds or try a different link!"
+  "TimeoutError": "couldn't access the processing instance within the given time. try again in a few seconds or try a different link!",
+  "ShortTimeoutError": "Timed out",
+  "ShortSyntaxError": "Syntax Error"
 }
