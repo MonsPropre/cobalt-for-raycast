@@ -240,10 +240,7 @@ export default function Command() {
                 cache: "no-store",
                 headers: instance.apiKey
                     ? {
-                        Authorization:
-                            instance.apiKey === "true"
-                                ? "Bearer your_api_key_here"
-                                : `Bearer ${instance.apiKey}`,
+                        Authorization: `Bearer ${instance.apiKey}`,
                     }
                     : undefined,
             });
@@ -373,7 +370,6 @@ export default function Command() {
         };
 
         const idOrUrl = instance.id ?? instance.url;
-        // if (idOrUrl && versionCache.hasOwnProperty(idOrUrl)) {
         const success = versionCache[idOrUrl];
         const versionAccessory = {
             icon: {
@@ -382,9 +378,6 @@ export default function Command() {
             },
         };
         return [baseAccessory, versionAccessory];
-        // }
-
-        return [baseAccessory];
     };
 
     return (
@@ -395,7 +388,7 @@ export default function Command() {
             searchBarPlaceholder="Search instances..."
             actions={
                 <ActionPanel>
-                    <Action title="Check All Versions" onAction={handleCheckAllVersions}/>
+                    <Action title="Refetch Data" onAction={handleCheckAllVersions}/>
                 </ActionPanel>
             }
         >
@@ -407,13 +400,7 @@ export default function Command() {
                     accessories={getAccessoriesForInstance(allInstances[0])}
                     actions={
                         <ActionPanel>
-                            <Action title="Check All Versions" onAction={handleCheckAllVersions}/>
-                            <Action
-                                title="Open GitHub"
-                                onAction={async () => {
-                                    await open("https://github.com/MonsPropre/cobalt-for-raycast");
-                                }}
-                            />
+                            <Action title="Refetch Data" onAction={handleCheckAllVersions}/>
                         </ActionPanel>
                     }
                     detail={
@@ -487,7 +474,7 @@ export default function Command() {
                         accessories={getAccessoriesForInstance(instance)}
                         actions={
                             <ActionPanel>
-                                <Action title="Check All Versions" onAction={handleCheckAllVersions}/>
+                                <Action title="Refetch Data" onAction={handleCheckAllVersions}/>
                             </ActionPanel>
                         }
                         detail={

@@ -208,8 +208,8 @@ export default function Command() {
         >
             <Form.Dropdown title="Instance" {...itemProps.instance}>
                 {instances.length > 0 ? (
-                    instances.map((instance) => (
-                        <Form.Dropdown.Item key={instance.url + 1} value={instance.id} title={instance.name}/>
+                    instances.map((instance, idx) => (
+                        <Form.Dropdown.Item key={idx} value={instance.id} title={instance.name}/>
                     ))
                 ) : (
                     <Form.Dropdown.Item value="" title="(No instances found)"/>
