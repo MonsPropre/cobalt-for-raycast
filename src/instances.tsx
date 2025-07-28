@@ -1,6 +1,17 @@
-import {Action, ActionPanel, Clipboard, Color, getPreferenceValues, Icon, List, open} from "@raycast/api";
+import {
+    Action,
+    ActionPanel,
+    Cache,
+    Color,
+    getPreferenceValues,
+    Icon,
+    List,
+    open,
+    showToast,
+    Toast,
+} from "@raycast/api";
 import {Instance} from "./utils/Types";
-import {useEffect, useState} from "react";
+import {useEffect, useState, useMemo} from "react";
 
 import * as Errors from "./utils/Error.json";
 
@@ -10,28 +21,45 @@ function getErrorMessage(key: ErrorKey) {
     return Errors[key];
 }
 
+const cache = new Cache();
+const CACHE_PREFIX = "version-instance:";
+const CACHE_TTL = 1000 * 60 * 5; // 5 minutes
+
+type CachedInstanceData = {
+    timestamp: number;
+    data: any;
+};
+
 export default function Command() {
     const {
         instanceSourceUrl = "https://raw.githubusercontent.com/MonsPropre/cobalt-for-raycast/main/assets/instances.json",
         cobaltInstanceUrl,
-        cobaltInstanceUseApiKey
+        cobaltInstanceUseApiKey,
     } = getPreferenceValues();
 
+    // On met la custom à part pour simplifier le merge
+    const [customInstanceData, setCustomInstanceData] = useState<Instance | null>(null);
     const [data, setData] = useState<Instance[]>([]);
     const [error, setError] = useState<Error | null>(null);
-    const [isLoading, setIsLoading] = useState<boolean>(true);
+    const [isLoadingPublic, setIsLoadingPublic] = useState<boolean>(true);
+    const [isLoadingCustom, setIsLoadingCustom] = useState<boolean>(false);
 
     const [selection, setSelection] = useState<string | null>(null);
-
     const [emptyId, setEmptyId] = useState<string>("empty");
 
+    // Cache local des résultats de la vérification de version (id/url => bool)
+    const [versionCache, setVersionCache] = useState<Record<string, boolean>>({});
+
+    // État indiquant qu'un check global est en cours
+    const [checkingAll, setCheckingAll] = useState<boolean>(false);
+
+    // Chargement des instances publiques
     useEffect(() => {
-        const fetchData = async () => {
-            setIsLoading(true);
+        (async () => {
+            setIsLoadingPublic(true);
             try {
                 const response = await fetch(instanceSourceUrl, {
                     signal: AbortSignal.timeout(2500),
-                    cache: "force-cache"
                 });
                 const d = await response.json();
                 setData(d);
@@ -39,25 +67,348 @@ export default function Command() {
                 setError(error as Error);
                 setEmptyId("errored");
             }
-            setIsLoading(false);
-        };
-        fetchData();
+            setIsLoadingPublic(false);
+        })();
     }, [instanceSourceUrl]);
 
-    let instances: Instance[] = [];
-    if (Array.isArray(data)) {
-        instances = data;
+    // Chargement de la custom instance dès que les prefs changent
+    useEffect(() => {
+        const fetchCustomInstance = async () => {
+            // Pas de fetch à faire si pas d'URL
+            if (!cobaltInstanceUrl) {
+                setCustomInstanceData(null);
+                return;
+            }
+            setIsLoadingCustom(true);
+
+            try {
+                const customInstance: Instance = {
+                    id: "custom",
+                    name: "Custom",
+                    url: cobaltInstanceUrl,
+                    apiKey: cobaltInstanceUseApiKey ? "true" : undefined,
+                };
+
+                const fetchedData = await getInstanceData(customInstance);
+
+                // On merge les meta retournées dans l'instance
+                let merged = {
+                    ...customInstance,
+                    ...fetchedData, // fusion si besoin (ex: services)
+                    cobalt: fetchedData?.cobalt ?? customInstance.cobalt,
+                    version: fetchedData?.cobalt?.version ?? customInstance?.cobalt?.version,
+                };
+
+                setCustomInstanceData(merged);
+
+                // Pour les accessoires
+                setVersionCache((vc) => ({
+                    ...vc,
+                    custom: typeof fetchedData?.cobalt?.version === "string",
+                }));
+            } catch (e) {
+                setCustomInstanceData(null);
+            }
+
+            setIsLoadingCustom(false);
+        };
+
+        fetchCustomInstance();
+    }, [cobaltInstanceUrl, cobaltInstanceUseApiKey]);
+
+    // Pour l'affichage on met la custom avant les autres
+    const allInstances: Instance[] = useMemo(() => {
+        return [
+            customInstanceData ?? {
+                id: "custom",
+                name: "Custom",
+                url: cobaltInstanceUrl ?? "",
+                apiKey: cobaltInstanceUseApiKey ? "true" : undefined,
+            },
+            ...data,
+        ];
+    }, [customInstanceData, data, cobaltInstanceUrl, cobaltInstanceUseApiKey]);
+
+    useEffect(() => {
+        const loadCache = async () => {
+            const newVersionCache: Record<string, boolean> = {};
+
+            // Ici on itère sur data + customInstanceData séparément pour éviter la dépendance circulaire
+            const instancesToCheck = [
+                ...(customInstanceData ? [customInstanceData] : []),
+                ...data,
+            ];
+
+            let hasDataUpdate = false;
+            let newData = data;
+
+            for (const instance of instancesToCheck) {
+                const key = CACHE_PREFIX + (instance.id ?? instance.url);
+                const cachedRaw = cache.get(key);
+
+                if (cachedRaw !== undefined) {
+                    try {
+                        const cached: CachedInstanceData = JSON.parse(cachedRaw);
+                        const now = Date.now();
+                        if (now - cached.timestamp < CACHE_TTL) {
+                            const isValid = typeof cached.data?.cobalt?.version === "string";
+                            newVersionCache[instance.id ?? instance.url] = isValid;
+
+                            if (instance.id !== "custom") {
+                                // Pour éviter de trigger un setData trop souvent, on fait un seul setData en fin
+                                const idx = data.findIndex(i => (i.id ?? i.url) === (instance.id ?? instance.url));
+                                if (idx !== -1) {
+                                    // Remplace l'instance dans newData si different
+                                    const mergedInstance = {
+                                        ...instance, ...cached.data,
+                                        cobalt: cached.data.cobalt ?? instance.cobalt,
+                                        version: cached.data.cobalt?.version ?? instance.cobalt?.version
+                                    };
+                                    if (JSON.stringify(data[idx]) !== JSON.stringify(mergedInstance)) {
+                                        if (!hasDataUpdate) {
+                                            newData = [...data];
+                                            hasDataUpdate = true;
+                                        }
+                                        newData[idx] = mergedInstance;
+                                    }
+                                }
+                            }
+                        }
+                    } catch {
+                        // ignore json parse error
+                    }
+                }
+            }
+
+            setVersionCache((vc) => ({...vc, ...newVersionCache}));
+            if (hasDataUpdate) {
+                setData(newData);
+            }
+        };
+
+        loadCache();
+// eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [data, customInstanceData]);
+
+    // Fonction pour créer la clé cache pour une instance (id ou url)
+    const getCacheKeyForInstance = (instance: Instance): string =>
+        CACHE_PREFIX + (instance.id ?? instance.url);
+
+    // Fonction pour fusionner les données fetchées dans l'instance correspondante dans data
+    const updateInstanceWithFetchedData = (idOrUrl: string, fetchedData: any) => {
+        setData((oldData) =>
+            oldData.map((instance) => {
+                if ((instance.id ?? instance.url) === idOrUrl) {
+                    return {
+                        ...instance,
+                        ...fetchedData,
+                        cobalt: fetchedData.cobalt ?? instance.cobalt,
+                        version: fetchedData.cobalt?.version ?? instance?.cobalt?.version,
+                    };
+                }
+                return instance;
+            })
+        );
+    };
+
+    // Fonction pour obtenir les données de l'instance via cache avec expiration et fetch si nécessaire
+    async function getInstanceData(instance: Instance): Promise<any | null> {
+        if (!instance.url) {
+            setError(new Error("URL absente pour l'instance"));
+            return null;
+        }
+
+        const cacheKey = getCacheKeyForInstance(instance);
+        const cachedRaw = cache.get(cacheKey);
+
+        if (cachedRaw) {
+            try {
+                const cached: CachedInstanceData = JSON.parse(cachedRaw);
+                const now = Date.now();
+
+                if (now - cached.timestamp < CACHE_TTL) {
+                    return cached.data;
+                }
+            } catch {
+                // Ignore erreur JSON & poursuivre fetch
+            }
+        }
+
+        try {
+            const response = await fetch(instance.url, {
+                signal: AbortSignal.timeout(1500),
+                cache: "no-store",
+                headers: instance.apiKey
+                    ? {
+                        Authorization:
+                            instance.apiKey === "true"
+                                ? "Bearer your_api_key_here"
+                                : `Bearer ${instance.apiKey}`,
+                    }
+                    : undefined,
+            });
+
+            if (!response.ok) {
+                setError(new Error(`Erreur HTTP ${response.status} pour ${instance.url}`));
+                return null;
+            }
+
+            const data = await response.json();
+
+            const toCache: CachedInstanceData = {
+                timestamp: Date.now(),
+                data,
+            };
+            cache.set(cacheKey, JSON.stringify(toCache));
+
+            return data;
+        } catch (error) {
+            setError(error as Error);
+            return null;
+        }
     }
 
+    // Vérification si la version cobalt existe via getInstanceData, et mise à jour de data avec cobalt
+    // Modification dans checkVersionInstance pour écrire dans cache à chaque fetch réussi
+    const checkVersionInstance = async (instance: Instance): Promise<boolean> => {
+        const fetchedData = await getInstanceData(instance);
+        if (!fetchedData) return false;
+
+        const isValid = typeof fetchedData.cobalt?.version === "string";
+        const idOrUrl = instance.id ?? instance.url;
+
+        setVersionCache((c) => ({...c, [idOrUrl]: isValid}));
+
+        if (instance.id === "custom") {
+            setCustomInstanceData((old) => ({
+                ...(old ?? instance),
+                ...fetchedData,
+                cobalt: fetchedData.cobalt ?? old?.cobalt,
+                version: fetchedData.cobalt?.version ?? old?.cobalt?.version,
+            }));
+        } else {
+            updateInstanceWithFetchedData(idOrUrl, fetchedData);
+        }
+
+        // Update the cache of the full instance data after fetch
+        const cacheKey = getCacheKeyForInstance(instance);
+        const toCache: CachedInstanceData = {
+            timestamp: Date.now(),
+            data: fetchedData,
+        };
+        cache.set(cacheKey, JSON.stringify(toCache));
+
+        return isValid;
+    };
+
+    // Modification dans handleCheckAllVersions : on recharge toutes les instances (publiques + custom) et on remplace cache + state
+    const handleCheckAllVersions = async () => {
+        setCheckingAll(true);
+        await showToast({style: Toast.Style.Animated, title: "Checking all instances..."});
+
+        const newVersionCache: Record<string, boolean> = {};
+
+        // On récupère les données fraîches pour toutes les instances
+
+        allInstances.map((instance) => {
+            cache.clear();
+        });
+
+        const newPublicData: Instance[] = [];
+        for (const instance of allInstances) {
+            const idOrUrl = instance.id ?? instance.url;
+            const isValid = await checkVersionInstance(instance);
+            newVersionCache[idOrUrl] = isValid;
+
+            if (instance.id !== "custom" && isValid) {
+                // Récupère instance mise à jour du state custom ou data (via checkVersionInstance)
+                const cachedRaw = cache.get(getCacheKeyForInstance(instance));
+                if (cachedRaw) {
+                    try {
+                        const cached: CachedInstanceData = JSON.parse(cachedRaw);
+                        if (Date.now() - cached.timestamp < CACHE_TTL) {
+                            // On utilise la donnée cache fraîche mise à jour
+                            newPublicData.push({
+                                ...instance,
+                                ...cached.data,
+                                cobalt: cached.data.cobalt ?? instance.cobalt,
+                                version: cached.data.cobalt?.version ?? instance?.cobalt?.version,
+                            });
+                        }
+                    } catch {
+                        // ignore json error
+                    }
+                } else {
+                    // Pas de cache, on ajoute comme avant
+                    newPublicData.push(instance);
+                }
+            }
+        }
+
+        // Met à jour les états avec données fraîches et cache versions
+        setVersionCache(newVersionCache);
+        setCheckingAll(false);
+
+        // Met à jour uniquement la liste publique (la customInstanceData a déjà été mise à jour dans checkVersionInstance)
+        setData(newPublicData);
+
+        // Met à jour également la cache globale des instances publiques (liste)
+        cache.set(
+            CACHE_PREFIX + ":public-list",
+            JSON.stringify({
+                timestamp: Date.now(),
+                data: newPublicData,
+            })
+        );
+
+        await showToast({style: Toast.Style.Success, title: "Check complete"});
+    };
+
+    // Icônes accessoires selon succès/échec de check version dans le cache
+    const getAccessoriesForInstance = (instance: Instance) => {
+        const baseAccessory = {
+            icon: {
+                source: Icon.AppWindow,
+                tintColor: instance.frontendUrl ? Color.Green : Color.Red,
+            },
+        };
+
+        const idOrUrl = instance.id ?? instance.url;
+        // if (idOrUrl && versionCache.hasOwnProperty(idOrUrl)) {
+        const success = versionCache[idOrUrl];
+        const versionAccessory = {
+            icon: {
+                source: success ? Icon.Link : Icon.Warning,
+                tintColor: success ? Color.Green : Color.Red,
+            },
+        };
+        return [baseAccessory, versionAccessory];
+        // }
+
+        return [baseAccessory];
+    };
+
     return (
-        <List isLoading={isLoading} onSelectionChange={setSelection} isShowingDetail={selection !== null && selection !== "empty" && selection !== "errored"}>
+        <List
+            isLoading={isLoadingPublic || isLoadingCustom || checkingAll}
+            onSelectionChange={setSelection}
+            isShowingDetail={selection !== null && selection !== "empty" && selection !== "errored"}
+            searchBarPlaceholder="Search instances..."
+            actions={
+                <ActionPanel>
+                    <Action title="Check All Versions" onAction={handleCheckAllVersions}/>
+                </ActionPanel>
+            }
+        >
             <List.Section title="Custom Instance">
                 <List.Item
                     title="Custom"
                     id="custom"
                     subtitle={cobaltInstanceUrl}
+                    accessories={getAccessoriesForInstance(allInstances[0])}
                     actions={
                         <ActionPanel>
+                            <Action title="Check All Versions" onAction={handleCheckAllVersions}/>
                             <Action
                                 title="Open GitHub"
                                 onAction={async () => {
@@ -78,96 +429,98 @@ export default function Command() {
                                         title="Name"
                                         text={"Custom"}
                                     />
+                                    {allInstances[0]?.cobalt?.version && (
+                                        <List.Item.Detail.Metadata.Label
+                                            title="Version"
+                                            text={allInstances[0].cobalt.version}
+                                        />
+                                    )}
                                     <List.Item.Detail.Metadata.Label
                                         title="Use API Key"
-                                        text={cobaltInstanceUseApiKey ? "Yes" : "No"}
+                                        text={allInstances[0]?.apiKey ? "Yes" : "No"}
                                     />
+                                    <List.Item.Detail.Metadata.Label
+                                        title="Frontend ?"
+                                        text={allInstances[0]?.frontendUrl ? "Yes" : "No"}
+                                    />
+                                    {allInstances[0]?.cobalt && allInstances[0]?.cobalt?.services?.length > 0 && (
+                                        <List.Item.Detail.Metadata.TagList title="Services">
+                                            {allInstances[0]?.cobalt?.services?.map((service) => (
+                                                <List.Item.Detail.Metadata.TagList.Item
+                                                    key={service}
+                                                    text={service}
+                                                />
+                                            ))}
+                                        </List.Item.Detail.Metadata.TagList>
+                                    )}
                                 </List.Item.Detail.Metadata>
                             }
                         />
                     }
                 />
             </List.Section>
+
             <List.Section title="Public Instances">
-                {instances.length === 0 && !isLoading && (
+                {data.length === 0 && !isLoadingPublic && (
                     <List.Item
                         id={emptyId}
                         title="No instances found"
                         subtitle="Check the source URL in preferences."
-                        accessories={
-                            [
-                                {
-                                    icon: {
-                                        source: Icon.Warning,
-                                        tintColor: Color.Red
-                                    },
-                                    text: getErrorMessage("Short" + error?.name as ErrorKey)
-                                }
-                            ]
-                        }
+                        accessories={[
+                            {
+                                icon: {
+                                    source: Icon.Warning,
+                                    tintColor: Color.Red,
+                                },
+                            },
+                        ]}
                     />
                 )}
-                {instances.map((instance) => {
-                    return (
-                        <List.Item
-                            key={instance.id ?? instance.url} // fallback si id absent
-                            title={instance.name}
-                            subtitle={instance.url}
-                            accessories={
-                                [
-                                    {
-                                        icon: {
-                                            source: Icon.AppWindow,
-                                            tintColor: instance.frontendUrl ? Color.Green : Color.Red
-                                        }
-                                    }
-                                ]
-                            }
-                            actions={
-                                <ActionPanel title={instance.name}>
-                                    <ActionPanel.Section>
-                                        <Action
-                                            title="Copy URL"
-                                            onAction={async () => {
-                                                await Clipboard.copy(instance.url);
-                                            }}
+                {data.map((instance) => (
+                    <List.Item
+                        key={instance.id ?? instance.url}
+                        title={instance.name}
+                        subtitle={instance.url}
+                        accessories={getAccessoriesForInstance(instance)}
+                        actions={
+                            <ActionPanel>
+                                <Action title="Check All Versions" onAction={handleCheckAllVersions}/>
+                            </ActionPanel>
+                        }
+                        detail={
+                            <List.Item.Detail
+                                metadata={
+                                    <List.Item.Detail.Metadata>
+                                        <List.Item.Detail.Metadata.Label title="Id" text={instance?.id}/>
+                                        <List.Item.Detail.Metadata.Label title="Name" text={instance?.name}/>
+                                        {instance?.cobalt?.version && (
+                                            <List.Item.Detail.Metadata.Label title="Version"
+                                                                             text={instance.cobalt.version}/>
+                                        )}
+                                        <List.Item.Detail.Metadata.Label
+                                            title="Use API Key"
+                                            text={instance?.apiKey ? "Yes" : "No"}
                                         />
-                                    </ActionPanel.Section>
-                                </ActionPanel>
-                            }
-                            detail={
-                                <List.Item.Detail
-                                    metadata={
-                                        <List.Item.Detail.Metadata>
-                                            <List.Item.Detail.Metadata.Label
-                                                title="Id"
-                                                text={instance?.id}
-                                            />
-                                            <List.Item.Detail.Metadata.Label
-                                                title="Name"
-                                                text={instance?.name}
-                                            />
-                                            {instance?.version && (
-                                                <List.Item.Detail.Metadata.Label
-                                                    title="Version"
-                                                    text={instance?.version}
-                                                />
-                                            )}
-                                            <List.Item.Detail.Metadata.Label
-                                                title="Use API Key"
-                                                text={instance?.apiKey ? "Yes" : "No"}
-                                            />
-                                            <List.Item.Detail.Metadata.Label
-                                                title="Frontend ?"
-                                                text={instance?.frontendUrl ? "Yes" : "No"}
-                                            />
-                                        </List.Item.Detail.Metadata>
-                                    }
-                                />
-                            }
-                        />
-                    );
-                })}
+                                        <List.Item.Detail.Metadata.Label
+                                            title="Frontend ?"
+                                            text={instance?.frontendUrl ? "Yes" : "No"}
+                                        />
+                                        {instance?.cobalt && instance?.cobalt?.services?.length > 0 && (
+                                            <List.Item.Detail.Metadata.TagList title="Services">
+                                                {instance?.cobalt?.services?.map((service) => (
+                                                    <List.Item.Detail.Metadata.TagList.Item
+                                                        key={service}
+                                                        text={service}
+                                                    />
+                                                ))}
+                                            </List.Item.Detail.Metadata.TagList>
+                                        )}
+                                    </List.Item.Detail.Metadata>
+                                }
+                            />
+                        }
+                    />
+                ))}
             </List.Section>
         </List>
     );

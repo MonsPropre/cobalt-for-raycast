@@ -4,9 +4,23 @@ export type FormValues = {
     instance: string;
 };
 
+export type CobaltInstance = {
+    version: string;
+    url: string;
+    startTime: string;
+    services: string[];
+};
+
+export type GitInstance = {
+    branch: string;
+    commit: string;
+    remote: string;
+};
+
 export type Instance = {
     id: string;
-    version?: string;
+    cobalt?: CobaltInstance;  // ici cobalt est typé précisément
+    git?: GitInstance;
     name: string;
     url: string;
     apiKey?: string;

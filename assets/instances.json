@@ -2,11 +2,12 @@
   {
     "id": "b441fcae-aad5-4861-9c28-b43698bed0be",
     "name": "Meowing.de",
-    "url": "https://cobalt-api.meowing.de"
+    "url": "https://cobalt-api.meowing.de",
+    "frontendUrl": "https://cobalt.meowing.de"
   },
   {
-    "id": "12ea9bfc-d8c3-45c9-a5b7-ecc081586d65",
-    "name": "TEST",
-    "url": "https://cobalt.example.com"
+    "id": "e0affa89-975b-4126-b228-bf2be30a9c5e",
+    "name": "ELZC",
+    "url": "https://cobalt.erwanlazic.fr"
   }
 ]
