@@ -320,28 +320,27 @@ export default function Command() {
             const isValid = await checkVersionInstance(instance);
             newVersionCache[idOrUrl] = isValid;
 
-            if (instance.id !== "custom" && isValid) {
-                // Récupère instance mise à jour du state custom ou data (via checkVersionInstance)
+            if (instance.id !== "custom") {
                 const cachedRaw = cache.get(getCacheKeyForInstance(instance));
-                if (cachedRaw) {
+
+                if (cachedRaw && isValid) {
                     try {
                         const cached: CachedInstanceData = JSON.parse(cachedRaw);
                         if (Date.now() - cached.timestamp < CACHE_TTL) {
-                            // On utilise la donnée cache fraîche mise à jour
                             newPublicData.push({
                                 ...instance,
                                 ...cached.data,
                                 cobalt: cached.data.cobalt ?? instance.cobalt,
                                 version: cached.data.cobalt?.version ?? instance?.cobalt?.version,
                             });
+                            continue;
                         }
                     } catch {
-                        // ignore json error
+                        // ignore JSON error
                     }
-                } else {
-                    // Pas de cache, on ajoute comme avant
-                    newPublicData.push(instance);
                 }
+                // Ajout de l'instance même si fetch/validation a échoué
+                newPublicData.push(instance);
             }
         }
 
@@ -404,7 +403,7 @@ export default function Command() {
                 <List.Item
                     title="Custom"
                     id="custom"
-                    subtitle={cobaltInstanceUrl}
+                    // subtitle={cobaltInstanceUrl}
                     accessories={getAccessoriesForInstance(allInstances[0])}
                     actions={
                         <ActionPanel>
@@ -428,6 +427,10 @@ export default function Command() {
                                     <List.Item.Detail.Metadata.Label
                                         title="Name"
                                         text={"Custom"}
+                                    />
+                                    <List.Item.Detail.Metadata.Label
+                                        title="URL"
+                                        text={allInstances[0]?.url}
                                     />
                                     {allInstances[0]?.cobalt?.version && (
                                         <List.Item.Detail.Metadata.Label
@@ -480,7 +483,7 @@ export default function Command() {
                     <List.Item
                         key={instance.id ?? instance.url}
                         title={instance.name}
-                        subtitle={instance.url}
+                        // subtitle={instance.url}
                         accessories={getAccessoriesForInstance(instance)}
                         actions={
                             <ActionPanel>
@@ -493,6 +496,7 @@ export default function Command() {
                                     <List.Item.Detail.Metadata>
                                         <List.Item.Detail.Metadata.Label title="Id" text={instance?.id}/>
                                         <List.Item.Detail.Metadata.Label title="Name" text={instance?.name}/>
+                                        <List.Item.Detail.Metadata.Label title="Url" text={instance?.url}/>
                                         {instance?.cobalt?.version && (
                                             <List.Item.Detail.Metadata.Label title="Version"
                                                                              text={instance.cobalt.version}/>
