@@ -5,6 +5,7 @@
   "description": "Cobalt for Raycast",
   "icon": "icon.png",
   "author": "baldy",
+  "license": "MIT",
   "contributors": [],
   "categories": [
     "Applications",
@@ -18,7 +19,6 @@
     "bilibili",
     "yt-dlp"
   ],
-  "license": "MIT",
   "commands": [
     {
       "name": "about",
