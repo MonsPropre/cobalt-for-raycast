@@ -14,5 +14,8 @@ compiled_raycast_swift
 # misc
 .DS_Store
 
+# Cobalt for Raycast Specific Files
+assets/instances.json
+
 # backup
 /backup
