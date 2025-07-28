@@ -28,7 +28,7 @@ async function download(
   instance:
     | Instance
     | undefined
-    | { id: string; name: string; url: any; apiKey: any },
+    | { id: string; name: string; url: string; apiKey: string },
 ) {
   const apiUrl = instance?.url;
   const apiKey = instance?.apiKey;
@@ -37,85 +37,93 @@ async function download(
     style: Toast.Style.Animated,
     title: "Downloading",
   });
-  await fetch(apiUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-      ...(apiKey !== undefined ? { Authorization: `Api-Key ${apiKey}` } : {}),
-    },
-    body: JSON.stringify({
-      url: values.url,
-      downloadMode: values.downloadMode,
-      filenameStyle: "nerdy",
-    }),
-    signal: AbortSignal.timeout(2500),
-  })
-    .then(async (response) => {
-      const resJson = await response.json();
-      if (!response.ok) {
-        throw resJson;
-      }
-      return resJson;
+  if (apiUrl) {
+    await fetch(apiUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        ...(apiKey !== undefined ? { Authorization: `Api-Key ${apiKey}` } : {}),
+      },
+      body: JSON.stringify({
+        url: values.url,
+        downloadMode: values.downloadMode,
+        filenameStyle: "nerdy",
+      }),
+      signal: AbortSignal.timeout(2500),
     })
-    .then(async (data) => {
-      if (data && data.status === "tunnel") {
-        await showToast({
-          style: Toast.Style.Animated,
-          title: "Tunnel created",
-          message: `Tunnel ${new URL(data.url).searchParams.get("id")} created.`,
-        });
-        await confirmAlert({
-          title: `Download ${data?.filename} ?`,
-          primaryAction: {
-            title: "Download",
-            onAction: async () => {
-              await showToast({
-                style: Toast.Style.Success,
-                title: "Download started",
-              });
-              await popToRoot();
-              await open(data.url);
+      .then(async (response) => {
+        const resJson = await response.json();
+        if (!response.ok) {
+          throw resJson;
+        }
+        return resJson;
+      })
+      .then(async (data) => {
+        if (data && data.status === "tunnel") {
+          await showToast({
+            style: Toast.Style.Animated,
+            title: "Tunnel created",
+            message: `Tunnel ${new URL(data.url).searchParams.get("id")} created.`,
+          });
+          await confirmAlert({
+            title: `Download ${data?.filename} ?`,
+            primaryAction: {
+              title: "Download",
+              onAction: async () => {
+                await showToast({
+                  style: Toast.Style.Success,
+                  title: "Download started",
+                });
+                await popToRoot();
+                await open(data.url);
+              },
             },
-          },
-          dismissAction: {
-            title: "Cancel",
-            onAction: async () => {
-              await showToast({
-                style: Toast.Style.Failure,
-                title: "Download canceled",
-              });
+            dismissAction: {
+              title: "Cancel",
+              onAction: async () => {
+                await showToast({
+                  style: Toast.Style.Failure,
+                  title: "Download canceled",
+                });
+              },
             },
-          },
+          });
+        }
+      })
+      .catch(async (error) => {
+        if (error?.status === "error") {
+          await showToast({
+            style: Toast.Style.Failure,
+            title: "Failed to download",
+            message: getErrorMessage(error?.error?.code),
+          });
+          return;
+        }
+        if (error?.name) {
+          await showToast({
+            style: Toast.Style.Failure,
+            title: "Failed to download",
+            message: getErrorMessage(error?.error?.code),
+          });
+          return;
+        }
+        console.error({
+          name: error.name,
         });
-      }
-    })
-    .catch(async (error) => {
-      if (error?.status === "error") {
         await showToast({
           style: Toast.Style.Failure,
-          title: "Failed to download",
-          message: getErrorMessage(error?.error?.code),
+          title: error?.name || "Failed to download",
+          message: getErrorMessage(error?.message),
         });
-        return;
-      }
-      if (error?.name) {
-        await showToast({
-          style: Toast.Style.Failure,
-          title: "Failed to download",
-          message: getErrorMessage(error?.error?.code),
-        });
-        return;
-      }
-      console.error({
-        name: error.name,
       });
-      await showToast({
-        style: Toast.Style.Failure,
-        title: error?.name || "Failed to download",
-        message: getErrorMessage(error?.message),
-      });
+  } else {
+    await showToast({
+      style: Toast.Style.Failure,
+      title: "Failed to download",
+      message: "API URL not found",
     });
+  }
 }
 
 export default function Command() {
