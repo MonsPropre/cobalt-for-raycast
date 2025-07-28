@@ -35,7 +35,7 @@ async function download(
 
   await showToast({
     style: Toast.Style.Animated,
-    title: "Downloading",
+    title: "Processing",
   });
   if (apiUrl) {
     await fetch(apiUrl, {
@@ -60,6 +60,36 @@ async function download(
         return resJson;
       })
       .then(async (data) => {
+        if (data && data.status === "redirect") {
+          await showToast({
+            style: Toast.Style.Animated,
+            title: "Redirecting",
+            message: `Redirecting to ${data.url}`,
+          });
+          await confirmAlert({
+            title: `Open ${data?.filename} ?`,
+            primaryAction: {
+              title: "Open",
+              onAction: async () => {
+                await showToast({
+                  style: Toast.Style.Success,
+                  title: "Download started",
+                });
+                await popToRoot();
+                await open(data.url);
+              },
+            },
+            dismissAction: {
+              title: "Cancel",
+              onAction: async () => {
+                await showToast({
+                  style: Toast.Style.Failure,
+                  title: "Download canceled",
+                });
+              },
+            },
+          });
+        }
         if (data && data.status === "tunnel") {
           await showToast({
             style: Toast.Style.Animated,
@@ -190,6 +220,11 @@ export default function Command() {
       try {
         const url = new URL(text as string);
         if (url.protocol === "http:" || url.protocol === "https:") {
+          await showToast({
+            style: Toast.Style.Success,
+            title: "Loaded URL from Clipboard",
+            message: text,
+          });
           reset({ url: text, downloadMode: "auto" });
         }
       } catch (_) {

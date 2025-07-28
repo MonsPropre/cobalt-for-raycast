@@ -8,16 +8,18 @@
   "license": "MIT",
   "contributors": [],
   "categories": [
-    "Applications",
+    "Productivity",
     "Data",
     "Productivity"
   ],
   "keywords": [
     "video",
+    "audio",
     "downloader",
     "youtube",
-    "bilibili",
-    "yt-dlp"
+    "twitch",
+    "soundcloud",
+    "cobalt"
   ],
   "commands": [
     {
@@ -35,7 +37,7 @@
     },
     {
       "name": "instances",
-      "title": "Instances",
+      "title": "Instances List",
       "description": "Cobalt Instances",
       "mode": "view"
     }
@@ -79,6 +81,9 @@
       "required": false
     }
   ],
+  "platforms": [
+    "Windows"
+  ],
   "dependencies": {
     "@raycast/api": "^1.93.0",
     "@raycast/utils": "^1.19.0",
@@ -104,6 +109,6 @@
     "prepare": "npm run fix-lint",
     "lint": "ray lint",
     "pull": "ray pull-contributions",
-    "publish": "ray publish"
+    "publish": "npx @raycast/api@latest publish"
   }
 }
