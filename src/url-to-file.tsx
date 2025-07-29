@@ -162,7 +162,7 @@ export default function Command() {
     cobaltInstanceUrl,
     cobaltInstanceUseApiKey,
     cobaltInstanceApiKey,
-    instanceSourceUrl = "https://raw.githubusercontent.com/MonsPropre/cobalt-for-raycast/main/assets/instances.json",
+    instanceSourceUrl = "https://instances.cobalt.best/api/instances.json",
   } = getPreferenceValues();
 
   const { data, revalidate } = useFetch<Instance[]>(instanceSourceUrl, {

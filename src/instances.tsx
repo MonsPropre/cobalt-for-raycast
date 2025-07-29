@@ -23,7 +23,7 @@ type CachedInstanceData = {
 
 export default function Command() {
   const {
-    instanceSourceUrl = "https://raw.githubusercontent.com/MonsPropre/cobalt-for-raycast/main/assets/instances.json",
+    instanceSourceUrl = "https://instances.cobalt.best/api/instances.json",
     cobaltInstanceUrl,
     cobaltInstanceUseApiKey,
   } = getPreferenceValues();
