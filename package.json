@@ -37,7 +37,7 @@
     },
     {
       "name": "instances",
-      "title": "Instances List",
+      "title": "List Instances",
       "description": "Cobalt Instances",
       "mode": "view"
     }
