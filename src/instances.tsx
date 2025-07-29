@@ -83,7 +83,18 @@ export default function Command() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [selection, setSelection] = useState<string | null>(null);
 
-  // Fonction pour charger tout (fetch ou cache global)
+  useEffect(() => {
+    (async () => {
+      if (error) {
+        await showToast({
+          style: Toast.Style.Failure,
+          title: "Something went wrong",
+          message: error.message,
+        });
+      }
+    })();
+  }, [error]);
+
   const fetchAllInstancesWithOnline = async (force = false) => {
     setIsLoading(true);
 
@@ -92,16 +103,18 @@ export default function Command() {
     if (cached) {
       try {
         data = JSON.parse(cached);
-      } catch {}
+      } catch {
+        // ignore
+      }
     }
 
     // vérifie si cache est périmé ou inexistant ou on veut forcer
     if (force || !data || Date.now() - data.timestamp > CACHE_TTL) {
       try {
-        // 1. Fetch public instances list
         const resp = await fetch(instancesSourceUrl, {
           headers: {
-            "User-Agent": "MonsPropre/cobalt-for-raycast (+https://github.com/MonsPropre/cobalt-for-raycast)",
+            "User-Agent":
+              "MonsPropre/cobalt-for-raycast (+https://github.com/MonsPropre/cobalt-for-raycast)",
           },
           signal: AbortSignal.timeout(3000),
         });
@@ -157,13 +170,13 @@ export default function Command() {
 
   // Chargement initial et toutes les 5 minutes
   useEffect(() => {
-    fetchAllInstancesWithOnline();
-    const timer = setInterval(() => fetchAllInstancesWithOnline(), CACHE_TTL);
-    return () => clearInterval(timer);
-    // eslint-disable-next-line
+    (async () => {
+      await fetchAllInstancesWithOnline();
+      const timer = setInterval(() => fetchAllInstancesWithOnline(), CACHE_TTL);
+      return () => clearInterval(timer);
+    })();
   }, [instancesSourceUrl, cobaltInstanceUrl, cobaltInstanceUseApiKey]);
 
-  // Pour bouton refetch (forcer => ignore cache)
   const handleRefetch = async () => {
     await showToast({
       style: Toast.Style.Animated,
@@ -173,7 +186,6 @@ export default function Command() {
     await showToast({ style: Toast.Style.Success, title: "Check complete!" });
   };
 
-  // Liste à afficher : custom toujours d'abord, TRIEES !
   const sortedPublicInstances: InstanceWithOnline[] = useMemo(
     () =>
       publicInstances
@@ -184,7 +196,6 @@ export default function Command() {
 
   const sortedCustomInstance = customInstance ? customInstance : undefined;
 
-  // Icone status online/offline + version
   function getAccessoriesForInstance(instance: InstanceWithOnline) {
     return [
       {
