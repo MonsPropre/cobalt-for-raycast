@@ -74,10 +74,18 @@
       "required": false
     },
     {
-      "name": "instanceSourceUrl",
+      "name": "instancesSourceUrl",
       "title": "Instances Source URL",
       "description": "Instances Source URL",
       "default": "https://instances.cobalt.best/api/instances.json",
+      "type": "textfield",
+      "required": false
+    },
+    {
+      "name": "sourceMinScore",
+      "title": "Source Min Score",
+      "description": "Source Min Score",
+      "default": "50",
       "type": "textfield",
       "required": false
     }
