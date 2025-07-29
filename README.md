@@ -13,6 +13,6 @@ Here is all the commands:
 To protect your privacy, you can add a custom instance directly in the extension preferences. **(Highly recommended)**
 
 ## Disclaimer
-This extension is not affiliated with Cobalt Tools.\
-Instance list is fetched from [instances.cobalt.best](https://instances.cobalt.best) that mean we do not own the instances and we are not responsible for them.\
-To reduce the privacy risk, we show only instances with a minimum score of 50 in the **`Convert URL to File`** command.
+- This extension is not affiliated with Cobalt Tools.
+- Instance list is fetched from [instances.cobalt.best](https://instances.cobalt.best) that mean we do not own the instances and we are not responsible for them.
+- To reduce the privacy risk, we show only instances with a minimum score of 50 in the **`Convert URL to File`** command.
