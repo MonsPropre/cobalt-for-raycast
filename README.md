@@ -1,6 +1,6 @@
 # Cobalt for Raycast
 
-Raycast extension for Cobalt Tools:
+Cobalt extension to use [cobalt.tools](https://cobalt.tools) through Raycast.
 
 Here is all the commands:
 
