@@ -13,7 +13,6 @@ import {
 } from "@raycast/api";
 import { useForm, FormValidation, useFetch, showFailureToast } from "@raycast/utils";
 import { useEffect } from "react";
-
 import * as Errors from "./utils/Error.json";
 import { CobaltError, FormValues, Instance } from "./utils/Types";
 
@@ -43,6 +42,10 @@ function fixProtocol(url: string, protocol: string) {
     protocol += "://";
   }
   return protocol + url;
+}
+
+function stripProtocol(url: string) {
+  return url.replace(/^\w+:\/\//, "");
 }
 
 async function download(
@@ -113,7 +116,7 @@ async function download(
             dismissAction: {
               title: "Cancel",
               onAction: async () => {
-                await showFailureToast({
+                await showFailureToast(new Error("Download canceled"), {
                   title: "Download canceled",
                   message: "",
                 });
@@ -143,7 +146,7 @@ async function download(
             dismissAction: {
               title: "Cancel",
               onAction: async () => {
-                await showFailureToast({
+                await showFailureToast(new Error("Download canceled"), {
                   title: "Download canceled",
                   message: "",
                 });
@@ -176,7 +179,7 @@ async function download(
         });
       });
   } else {
-    await showFailureToast({
+    await showFailureToast(new Error("Failed to download"), {
       title: "Failed to download",
       message: "API URL not found",
     });
@@ -193,7 +196,6 @@ export default function Command() {
     sourceMinScore = 50,
   } = getPreferenceValues();
 
-  // Fetch
   const { data, revalidate } = useFetch<Instance[]>(instancesSourceUrl, {
     headers: {
       "User-Agent": "MonsPropre/cobalt-for-raycast",
@@ -201,7 +203,6 @@ export default function Command() {
     keepPreviousData: true,
   });
 
-  // Parse initiale
   let instances: Instance[] = [];
   if (typeof data === "string") {
     try {
@@ -214,8 +215,9 @@ export default function Command() {
     instances = data;
   }
 
+  let customInstanceValue: string | undefined = undefined;
   if (enableCustomInstance && cobaltInstanceUrl) {
-    const exists = instances.some((inst) => inst.id === "custom" || (inst.api && inst.api === cobaltInstanceUrl));
+    const exists = instances.some((inst) => inst.api === cobaltInstanceUrl || inst.id === "custom");
     if (!exists) {
       instances.unshift({
         id: "custom",
@@ -224,7 +226,20 @@ export default function Command() {
         apiKey: cobaltInstanceUseApiKey ? cobaltInstanceApiKey : undefined,
       });
     }
+    customInstanceValue = cobaltInstanceUrl;
   }
+
+  const filteredPublicInstances = instances.filter(
+    (instance) =>
+      instance.version !== null &&
+      instance.version !== undefined &&
+      !(
+        enableCustomInstance &&
+        cobaltInstanceUrl &&
+        (instance.api === cobaltInstanceUrl || instance.id === "custom" || instance.frontend === cobaltInstanceUrl)
+      ) &&
+      (Number.isNaN(Number(sourceMinScore)) ? 50 : Number(sourceMinScore)),
+  );
 
   const { handleSubmit, itemProps, reset } = useForm<FormValues>({
     async onSubmit(values) {
@@ -263,7 +278,7 @@ export default function Command() {
           reset({ url: text, downloadMode: "auto" });
         }
       } catch (_) {
-        // Do nothing
+        // ignore
       }
     })();
   }, [reset]);
@@ -291,8 +306,8 @@ export default function Command() {
       <Form.Dropdown title="Instance" {...itemProps.instance}>
         {enableCustomInstance && (
           <Form.Dropdown.Section title="Custom Instance">
-            {cobaltInstanceUrl ? (
-              <Form.Dropdown.Item key="custom" value={cobaltInstanceUrl} title={cobaltInstanceUrl} />
+            {customInstanceValue ? (
+              <Form.Dropdown.Item key="custom" value={customInstanceValue} title={stripProtocol(customInstanceValue)} />
             ) : (
               <Form.Dropdown.Item
                 key="missingcustom"
@@ -305,20 +320,13 @@ export default function Command() {
         )}
 
         <Form.Dropdown.Section title="Public Instances">
-          {instances
-            .filter((instance) =>
-              instance.version !== null &&
-              instance.version !== undefined &&
-              !(
-                enableCustomInstance &&
-                cobaltInstanceUrl &&
-                (instance.id === "custom" || instance.api === cobaltInstanceUrl || instance.frontend === instance.api)
-              ) &&
-              Number.isNaN(Number(sourceMinScore))
-                ? 50
-                : Number(sourceMinScore),
-            )
+          {filteredPublicInstances
             .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+            .filter(
+              (instance) =>
+                instance.score !== undefined &&
+                instance.score >= (Number.isNaN(Number(sourceMinScore)) ? 50 : Number(sourceMinScore)),
+            )
             .map((instance, idx) => (
               <Form.Dropdown.Item
                 key={instance.id || idx}

@@ -1,51 +1,78 @@
 import { Action, ActionPanel, Cache, Color, getPreferenceValues, Icon, List, showToast, Toast } from "@raycast/api";
 import { Instance } from "./utils/Types";
 import { useEffect, useMemo, useState } from "react";
+import { showFailureToast } from "@raycast/utils";
 
 const cache = new Cache();
 const CACHE_PREFIX = "version-instance:";
-const CACHE_TTL = 1000 * 60 * 5; // 5 min
+const CACHE_TTL = 1000 * 60 * 5;
 
-type CachedInstancesStatus = {
-  timestamp: number;
-  data: InstanceWithOnline[];
-};
 type InstanceWithOnline = Instance & { online: boolean };
+type CachedInstanceStatus = {
+  timestamp: number;
+  data: InstanceWithOnline;
+};
 
-async function checkInstancesOnline(instances: Instance[]): Promise<InstanceWithOnline[]> {
-  return await Promise.all(
-    instances.map(async (instance) => {
-      let online = false;
-      let version = undefined;
-      let services = instance.services;
+async function checkInstanceOnline(instance: Instance): Promise<InstanceWithOnline> {
+  let online = false;
+  let version = undefined;
+  let services = instance.services;
+  try {
+    if (instance.api) {
+      const url = instance.protocol ? `${instance.protocol}://${instance.api}` : instance.api;
+      const response = await fetch(new URL(url), {
+        signal: AbortSignal.timeout(2000),
+        cache: "no-store",
+        headers: instance.apiKey ? { Authorization: `Bearer ${instance.apiKey}` } : undefined,
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (typeof data.cobalt?.version === "string") {
+          online = true;
+          version = data.cobalt.version;
+          services = data.cobalt.services ?? instance.services;
+        }
+      }
+    }
+  } catch {
+    online = false;
+  }
+  return {
+    ...instance,
+    version: version ?? instance.version,
+    services,
+    online,
+  };
+}
+
+async function getInstanceWithCache(instance: Instance, force = false): Promise<InstanceWithOnline> {
+  const key = CACHE_PREFIX + (instance.id ?? instance.api);
+  if (!force) {
+    const cached = cache.get(key);
+    if (cached) {
       try {
-        if (instance.api) {
-          const url = instance.protocol ? `${instance.protocol}://${instance.api}` : instance.api;
-          const response = await fetch(new URL(url), {
-            signal: AbortSignal.timeout(2000),
-            cache: "no-store",
-            headers: instance.apiKey ? { Authorization: `Bearer ${instance.apiKey}` } : undefined,
-          });
-          if (response.ok) {
-            const data = await response.json();
-            if (typeof data.cobalt?.version === "string") {
-              online = true;
-              version = data.cobalt.version;
-              services = data.cobalt.services ?? instance.services;
-            }
-          }
+        const data: CachedInstanceStatus = JSON.parse(cached);
+        if (Date.now() - data.timestamp < CACHE_TTL) {
+          return data.data;
         }
       } catch {
-        online = false;
+        // ignore
       }
-      return {
-        ...instance,
-        version: version ?? instance.version,
-        services,
-        online,
-      };
+    }
+  }
+  const fresh = await checkInstanceOnline(instance);
+  cache.set(
+    key,
+    JSON.stringify({
+      timestamp: Date.now(),
+      data: fresh,
     }),
   );
+  return fresh;
+}
+
+async function getAllInstancesWithCache(instances: Instance[], force = false) {
+  return Promise.all(instances.map((instance) => getInstanceWithCache(instance, force)));
 }
 
 export default function Command() {
@@ -69,94 +96,58 @@ export default function Command() {
   useEffect(() => {
     if (error) {
       (async () => {
-        await showToast({
-          style: Toast.Style.Failure,
+        await showFailureToast(error, {
           title: "Something went wrong",
-          message: error.message,
         });
       })();
     }
   }, [error]);
 
-  const fetchAllInstancesWithOnline = async (force = false) => {
+  const fetchAllInstances = async (force = false) => {
     setIsLoading(true);
+    try {
+      const resp = await fetch(instancesSourceUrl, {
+        headers: {
+          "User-Agent": "MonsPropre/cobalt-for-raycast (+https://github.com/MonsPropre/cobalt-for-raycast)",
+        },
+        signal: AbortSignal.timeout(3000),
+      });
+      const rawList: Instance[] = await resp.json();
 
-    const cached = cache.get(CACHE_PREFIX + "all-instances");
-    let data: CachedInstancesStatus | undefined;
-    if (cached) {
-      try {
-        data = JSON.parse(cached);
-      } catch {
-        // ignore
+      let customInst: InstanceWithOnline | null = null;
+      let triedCustom = false;
+      if (enableCustomInstance && cobaltInstanceUrl && cobaltInstanceUrl.trim() !== "") {
+        triedCustom = true;
+        const customToCheck: Instance = {
+          id: "custom",
+          name: cobaltInstanceUrl,
+          api: cobaltInstanceUrl,
+          apiKey: cobaltInstanceUseApiKey ? cobaltInstanceUseApiKey : undefined,
+        };
+        customInst = await getInstanceWithCache(customToCheck, force);
       }
-    }
 
-    if (force || !data || Date.now() - data.timestamp > CACHE_TTL) {
-      try {
-        const resp = await fetch(instancesSourceUrl, {
-          headers: {
-            "User-Agent": "MonsPropre/cobalt-for-raycast (+https://github.com/MonsPropre/cobalt-for-raycast)",
-          },
-          signal: AbortSignal.timeout(3000),
-        });
-        const rawList = await resp.json();
+      const publics = await getAllInstancesWithCache(rawList, force);
 
-        const fullPublic = await checkInstancesOnline(rawList);
-
-        let customInst: InstanceWithOnline | null = null;
-        let triedCustom = false;
-        if (enableCustomInstance && cobaltInstanceUrl && cobaltInstanceUrl.trim() !== "") {
-          triedCustom = true;
-          const customResult = await checkInstancesOnline([
-            {
-              id: "custom",
-              name: cobaltInstanceUrl,
-              api: cobaltInstanceUrl,
-              apiKey: cobaltInstanceUseApiKey ? cobaltInstanceUseApiKey : undefined,
-            },
-          ]);
-          customInst = customResult[0];
-        }
-        cache.set(
-          CACHE_PREFIX + "all-instances",
-          JSON.stringify({
-            timestamp: Date.now(),
-            data: [...(customInst ? [customInst] : []), ...fullPublic],
-          }),
-        );
-        setPublicInstances(fullPublic);
-        setCustomInstance(customInst);
-        setCustomInstanceTried(triedCustom);
-        setIsLoading(false);
-        return;
-      } catch (err) {
-        setError(err as Error);
-      }
-    } else if (data) {
-      const customFromCache = data.data.find((i) => i.id === "custom") || null;
-      const othersFromCache = data.data.filter((i) => i.id !== "custom");
-      setCustomInstance(customFromCache);
-      setCustomInstanceTried(enableCustomInstance && Boolean(cobaltInstanceUrl && cobaltInstanceUrl.trim() !== ""));
-      setPublicInstances(othersFromCache);
+      setCustomInstance(customInst);
+      setCustomInstanceTried(triedCustom);
+      setPublicInstances(publics);
       setIsLoading(false);
-      return;
+    } catch (err) {
+      setError(err as Error);
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
-  // 1) Fetch forcé à l'ouverture (toujours, même si cache)
   useEffect(() => {
-    fetchAllInstancesWithOnline(true); // lancement systématique en force !
-    // Pas de timer ici : un seul appel au tout début
-    // eslint-disable-next-line
+    (async () => {
+      await fetchAllInstances();
+    })();
   }, [instancesSourceUrl, cobaltInstanceUrl, cobaltInstanceUseApiKey, enableCustomInstance]);
 
-  // 2) Refresh périodique (toutes les 5 minutes, utilise le cache si pas expiré)
   useEffect(() => {
-    const timer = setInterval(() => fetchAllInstancesWithOnline(), CACHE_TTL);
-    return () => {
-      clearInterval(timer);
-    };
+    const timer = setInterval(() => fetchAllInstances(), CACHE_TTL);
+    return () => clearInterval(timer);
   }, [instancesSourceUrl, cobaltInstanceUrl, cobaltInstanceUseApiKey, enableCustomInstance]);
 
   const handleRefetch = async () => {
@@ -164,7 +155,7 @@ export default function Command() {
       style: Toast.Style.Animated,
       title: "Check in progress...",
     });
-    await fetchAllInstancesWithOnline(true);
+    await fetchAllInstances(true);
     await showToast({ style: Toast.Style.Success, title: "Check complete!" });
   };
 
@@ -175,7 +166,6 @@ export default function Command() {
 
   function getAccessoriesForInstance(instance: InstanceWithOnline) {
     const accessories = [];
-
     accessories.push({
       icon: {
         source: Icon.Link,
@@ -183,20 +173,17 @@ export default function Command() {
       },
       tooltip: instance.online ? "Online" : "Offline",
     });
-
-    if (instance.score !== undefined && instance.score < sourceMinScore)
+    if (instance.score === undefined || instance.score < sourceMinScore)
       accessories.push({
         icon: {
-          source: instance.score === 0 || instance.score < sourceMinScore ? Icon.Warning : undefined,
+          source: Icon.Warning,
           tintColor: Color.Orange,
         },
       });
-
     accessories.push({
       text: instance.version ?? "unknown",
       tooltip: `Version: ${instance.version}`,
     });
-
     return accessories.filter(Boolean);
   }
 
@@ -269,7 +256,6 @@ export default function Command() {
           <List.Item id="no-custom" title="No Custom Instance configured" icon={Icon.Minus} />
         )}
       </List.Section>
-
       <List.Section title="Public Instances">
         {sortedPublicInstances.length === 0 && !isLoading && (
           <List.Item
@@ -294,7 +280,14 @@ export default function Command() {
             actions={
               <ActionPanel>
                 <Action title="Refetch Data" onAction={handleRefetch} />
-                {instance.frontend && <Action.OpenInBrowser title="Open in Browser" url={instance.frontend} />}
+                {instance.frontend && (
+                  <Action.OpenInBrowser
+                    title="Open in Browser"
+                    url={
+                      instance.api.includes("://") ? instance.api : `${instance.protocol ?? "https"}://${instance.api}`
+                    }
+                  />
+                )}
               </ActionPanel>
             }
             detail={
@@ -318,7 +311,7 @@ export default function Command() {
                       title="Score"
                       text={instance.score?.toFixed(0) ?? "-"}
                       icon={
-                        instance.score === 0 || (instance.score !== undefined && instance.score < sourceMinScore)
+                        instance.score === undefined || instance.score === 0 || instance.score < sourceMinScore
                           ? { source: Icon.Warning, tintColor: Color.Orange }
                           : undefined
                       }

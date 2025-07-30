@@ -1,11 +1,32 @@
-# Cobalt for Raycast
+<p align="center">
+<picture>
+    <img src="assets/icon.png" alt="Cobalt for Raycast logo" width="128" />
+</picture>
+</p>
 
-Cobalt extension to use [cobalt.tools](https://cobalt.tools) through Raycast.
+<h1 align="center">
+  Cobalt for Raycast
+</h1>
+<p align="center">
+  Raycast extension to use the Cobalt.tools API
+</p>
 
-Here is all the commands:
+<p align="center">
+  <a href="https://github.com/imputnet/cobalt/blob/main/docs/run-an-instance.md">Run an instance</a>
+  <span>&nbsp;&nbsp;•&nbsp;&nbsp;</span>
+  <a href="https://cobalt.tools">Visit Cobalt</a>
+</p>
+
+# Introduction
+
+Cobalt for Raycast is an extension that allows you to use [cobalt.tools](https://cobalt.tools) through Raycast.
+
+![Cobalt for Raycast](./metadata/cobalt-for-raycast-2.png)
+
+## Commands
 
 - **List Instances**: A view that shows a paginated list of all the instances you can use.
-- **Convert URL to File**: Download media from multiple supported services (depending on the instance) using an url.
+- **Convert URL to File**: Download media from multiple supported services (depending on the instance) using a URL.
   - Bilibili
   - Bluesky
   - Dailymotion
@@ -34,8 +55,8 @@ To protect your privacy, you can add a custom instance directly in the extension
 
 1. Go to the extension preferences.
 2. Check **Enable Custom Instance** (**Highly recommended** if you own a custom instance).
-#### Stop here if you don't.
-3. Add your custom instance url.
+#### Stop here if you don't
+3. Add your custom instance URL.
 4. Add your custom instance API key (if needed).
 5. If needed, allow User-Agent `MonsPropre/cobalt-for-raycast` in your instance `keys.json`
 
