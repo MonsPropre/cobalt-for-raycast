@@ -72,7 +72,10 @@ export default function Command() {
     instancesSourceUrl = "https://instances.cobalt.best/api/instances.json",
     cobaltInstanceUrl,
     cobaltInstanceUseApiKey,
+    sourceMinScore: srcMinScore,
   } = getPreferenceValues();
+
+  const sourceMinScore = isNaN(Number(srcMinScore)) ? 50 : Number(srcMinScore);
 
   const [publicInstances, setPublicInstances] = useState<InstanceWithOnline[]>(
     [],
@@ -197,19 +200,33 @@ export default function Command() {
   const sortedCustomInstance = customInstance ? customInstance : undefined;
 
   function getAccessoriesForInstance(instance: InstanceWithOnline) {
-    return [
-      {
+    const accessories = [];
+
+    accessories.push({
+      icon: {
+        source: Icon.Link,
+        tintColor: instance.online ? Color.Green : Color.Red,
+      },
+      tooltip: instance.online ? "Online" : "Offline",
+    });
+
+    if (instance.score !== undefined && instance.score < sourceMinScore)
+      accessories.push({
         icon: {
-          source: instance.online ? Icon.CheckCircle : Icon.XMarkCircle,
-          tintColor: instance.online ? Color.Green : Color.Red,
+          source:
+            instance.score === 0 || instance.score < sourceMinScore
+              ? Icon.Warning
+              : undefined,
+          tintColor: Color.Orange,
         },
-        tooltip: instance.online ? "Online" : "Offline",
-      },
-      {
-        text: instance.version ?? "unknown",
-        tooltip: `Version: ${instance.version}`,
-      },
-    ].filter(Boolean); // retire undefined
+      });
+
+    accessories.push({
+      text: instance.version ?? "unknown",
+      tooltip: `Version: ${instance.version}`,
+    });
+
+    return accessories.filter(Boolean); // retire undefined
   }
 
   return (
@@ -235,7 +252,11 @@ export default function Command() {
                 : sortedCustomInstance.api
             }
             id="custom"
-            accessories={getAccessoriesForInstance(sortedCustomInstance)}
+            accessories={
+              getAccessoriesForInstance(
+                sortedCustomInstance,
+              ) as List.Item.Accessory[]
+            }
             actions={
               <ActionPanel>
                 <Action title="Refetch Data" onAction={handleRefetch} />
@@ -248,6 +269,18 @@ export default function Command() {
                     <List.Item.Detail.Metadata.Label
                       title="URL"
                       text={sortedCustomInstance.api}
+                    />
+                    <List.Item.Detail.Metadata.Label
+                      title="Online"
+                      text={sortedCustomInstance.online ? "Yes" : "No"}
+                      icon={
+                        sortedCustomInstance.online
+                          ? {
+                              source: Icon.Link,
+                              tintColor: Color.Green,
+                            }
+                          : { source: Icon.Link, tintColor: Color.Red }
+                      }
                     />
                     <List.Item.Detail.Metadata.Label
                       title="Version"
@@ -305,10 +338,18 @@ export default function Command() {
                     .hostname
                 : instance.name
             }
-            accessories={getAccessoriesForInstance(instance)}
+            accessories={
+              getAccessoriesForInstance(instance) as List.Item.Accessory[]
+            }
             actions={
               <ActionPanel>
                 <Action title="Refetch Data" onAction={handleRefetch} />
+                {instance.frontend && (
+                  <Action.OpenInBrowser
+                    title="Open in Browser"
+                    url={instance.frontend}
+                  />
+                )}
               </ActionPanel>
             }
             detail={
@@ -318,6 +359,18 @@ export default function Command() {
                     <List.Item.Detail.Metadata.Label
                       title="URL"
                       text={instance.api}
+                    />
+                    <List.Item.Detail.Metadata.Label
+                      title="Online"
+                      text={instance.online ? "Yes" : "No"}
+                      icon={
+                        instance.online
+                          ? {
+                              source: Icon.Link,
+                              tintColor: Color.Green,
+                            }
+                          : { source: Icon.Link, tintColor: Color.Red }
+                      }
                     />
                     <List.Item.Detail.Metadata.Label
                       title="Version"
@@ -334,6 +387,16 @@ export default function Command() {
                     <List.Item.Detail.Metadata.Label
                       title="Score"
                       text={instance.score?.toFixed(0) ?? "-"}
+                      icon={
+                        instance.score === 0 ||
+                        (instance.score !== undefined &&
+                          instance.score < sourceMinScore)
+                          ? {
+                              source: Icon.Warning,
+                              tintColor: Color.Orange,
+                            }
+                          : undefined
+                      }
                     />
                     {instance.services && instance.services.length > 0 && (
                       <List.Item.Detail.Metadata.TagList title="Services">

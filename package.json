@@ -4,7 +4,7 @@
   "title": "Cobalt for Raycast",
   "description": "Cobalt for Raycast",
   "icon": "icon.png",
-  "author": "baldy",
+  "author": "Baldy",
   "license": "MIT",
   "contributors": [],
   "categories": [
@@ -37,7 +37,7 @@
     },
     {
       "name": "instances",
-      "title": "List Instances",
+      "title": "Instances List",
       "description": "Cobalt Instances",
       "mode": "view"
     }
