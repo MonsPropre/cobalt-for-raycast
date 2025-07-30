@@ -1,55 +1,51 @@
-import { Action, ActionPanel, Cache, Color, getPreferenceValues, Icon, List, showToast, Toast } from "@raycast/api"
-import { Instance } from "./utils/Types"
-import { useEffect, useMemo, useState } from "react"
+import { Action, ActionPanel, Cache, Color, getPreferenceValues, Icon, List, showToast, Toast } from "@raycast/api";
+import { Instance } from "./utils/Types";
+import { useEffect, useMemo, useState } from "react";
 
-const cache = new Cache()
-const CACHE_PREFIX = "version-instance:"
-const CACHE_TTL = 1000 * 60 * 5 // 5 min
+const cache = new Cache();
+const CACHE_PREFIX = "version-instance:";
+const CACHE_TTL = 1000 * 60 * 5; // 5 min
 
 type CachedInstancesStatus = {
-  timestamp: number
-  data: InstanceWithOnline[]
-}
-type InstanceWithOnline = Instance & { online: boolean }
-
-function getCustomApiKey(): string | undefined {
-  return undefined
-}
+  timestamp: number;
+  data: InstanceWithOnline[];
+};
+type InstanceWithOnline = Instance & { online: boolean };
 
 async function checkInstancesOnline(instances: Instance[]): Promise<InstanceWithOnline[]> {
   return await Promise.all(
     instances.map(async (instance) => {
-      let online = false
-      let version = undefined
-      let services = instance.services
+      let online = false;
+      let version = undefined;
+      let services = instance.services;
       try {
         if (instance.api) {
-          const url = instance.protocol ? `${instance.protocol}://${instance.api}` : instance.api
+          const url = instance.protocol ? `${instance.protocol}://${instance.api}` : instance.api;
           const response = await fetch(new URL(url), {
             signal: AbortSignal.timeout(2000),
             cache: "no-store",
             headers: instance.apiKey ? { Authorization: `Bearer ${instance.apiKey}` } : undefined,
-          })
+          });
           if (response.ok) {
-            const data = await response.json()
+            const data = await response.json();
             if (typeof data.cobalt?.version === "string") {
-              online = true
-              version = data.cobalt.version
-              services = data.cobalt.services ?? instance.services
+              online = true;
+              version = data.cobalt.version;
+              services = data.cobalt.services ?? instance.services;
             }
           }
         }
       } catch {
-        online = false
+        online = false;
       }
       return {
         ...instance,
         version: version ?? instance.version,
         services,
         online,
-      }
+      };
     }),
-  )
+  );
 }
 
 export default function Command() {
@@ -59,37 +55,37 @@ export default function Command() {
     cobaltInstanceUrl,
     cobaltInstanceUseApiKey,
     sourceMinScore: srcMinScore,
-  } = getPreferenceValues()
+  } = getPreferenceValues();
 
-  const sourceMinScore = isNaN(Number(srcMinScore)) ? 50 : Number(srcMinScore)
+  const sourceMinScore = isNaN(Number(srcMinScore)) ? 50 : Number(srcMinScore);
 
-  const [publicInstances, setPublicInstances] = useState<InstanceWithOnline[]>([])
-  const [customInstance, setCustomInstance] = useState<InstanceWithOnline | null>(null)
-  const [customInstanceTried, setCustomInstanceTried] = useState<boolean>(false)
-  const [error, setError] = useState<Error | null>(null)
-  const [isLoading, setIsLoading] = useState<boolean>(true)
-  const [selection, setSelection] = useState<string | null>(null)
+  const [publicInstances, setPublicInstances] = useState<InstanceWithOnline[]>([]);
+  const [customInstance, setCustomInstance] = useState<InstanceWithOnline | null>(null);
+  const [customInstanceTried, setCustomInstanceTried] = useState<boolean>(false);
+  const [error, setError] = useState<Error | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [selection, setSelection] = useState<string | null>(null);
 
   useEffect(() => {
     if (error) {
-      ;(async () => {
+      (async () => {
         await showToast({
           style: Toast.Style.Failure,
           title: "Something went wrong",
           message: error.message,
-        })
-      })()
+        });
+      })();
     }
-  }, [error])
+  }, [error]);
 
   const fetchAllInstancesWithOnline = async (force = false) => {
-    setIsLoading(true)
+    setIsLoading(true);
 
-    const cached = cache.get(CACHE_PREFIX + "all-instances")
-    let data: CachedInstancesStatus | undefined
+    const cached = cache.get(CACHE_PREFIX + "all-instances");
+    let data: CachedInstancesStatus | undefined;
     if (cached) {
       try {
-        data = JSON.parse(cached)
+        data = JSON.parse(cached);
       } catch {
         // ignore
       }
@@ -102,24 +98,24 @@ export default function Command() {
             "User-Agent": "MonsPropre/cobalt-for-raycast (+https://github.com/MonsPropre/cobalt-for-raycast)",
           },
           signal: AbortSignal.timeout(3000),
-        })
-        const rawList = await resp.json()
+        });
+        const rawList = await resp.json();
 
-        const fullPublic = await checkInstancesOnline(rawList)
+        const fullPublic = await checkInstancesOnline(rawList);
 
-        let customInst: InstanceWithOnline | null = null
-        let triedCustom = false
+        let customInst: InstanceWithOnline | null = null;
+        let triedCustom = false;
         if (enableCustomInstance && cobaltInstanceUrl && cobaltInstanceUrl.trim() !== "") {
-          triedCustom = true
+          triedCustom = true;
           const customResult = await checkInstancesOnline([
             {
               id: "custom",
               name: cobaltInstanceUrl,
               api: cobaltInstanceUrl,
-              apiKey: cobaltInstanceUseApiKey ? getCustomApiKey() : undefined,
+              apiKey: cobaltInstanceUseApiKey ? cobaltInstanceUseApiKey : undefined,
             },
-          ])
-          customInst = customResult[0]
+          ]);
+          customInst = customResult[0];
         }
         cache.set(
           CACHE_PREFIX + "all-instances",
@@ -127,58 +123,58 @@ export default function Command() {
             timestamp: Date.now(),
             data: [...(customInst ? [customInst] : []), ...fullPublic],
           }),
-        )
-        setPublicInstances(fullPublic)
-        setCustomInstance(customInst)
-        setCustomInstanceTried(triedCustom)
-        setIsLoading(false)
-        return
+        );
+        setPublicInstances(fullPublic);
+        setCustomInstance(customInst);
+        setCustomInstanceTried(triedCustom);
+        setIsLoading(false);
+        return;
       } catch (err) {
-        setError(err as Error)
+        setError(err as Error);
       }
     } else if (data) {
-      const customFromCache = data.data.find((i) => i.id === "custom") || null
-      const othersFromCache = data.data.filter((i) => i.id !== "custom")
-      setCustomInstance(customFromCache)
-      setCustomInstanceTried(enableCustomInstance && Boolean(cobaltInstanceUrl && cobaltInstanceUrl.trim() !== ""))
-      setPublicInstances(othersFromCache)
-      setIsLoading(false)
-      return
+      const customFromCache = data.data.find((i) => i.id === "custom") || null;
+      const othersFromCache = data.data.filter((i) => i.id !== "custom");
+      setCustomInstance(customFromCache);
+      setCustomInstanceTried(enableCustomInstance && Boolean(cobaltInstanceUrl && cobaltInstanceUrl.trim() !== ""));
+      setPublicInstances(othersFromCache);
+      setIsLoading(false);
+      return;
     }
-    setIsLoading(false)
-  }
+    setIsLoading(false);
+  };
 
   // 1) Fetch forcé à l'ouverture (toujours, même si cache)
   useEffect(() => {
-    fetchAllInstancesWithOnline(true) // lancement systématique en force !
+    fetchAllInstancesWithOnline(true); // lancement systématique en force !
     // Pas de timer ici : un seul appel au tout début
     // eslint-disable-next-line
-  }, [instancesSourceUrl, cobaltInstanceUrl, cobaltInstanceUseApiKey, enableCustomInstance])
+  }, [instancesSourceUrl, cobaltInstanceUrl, cobaltInstanceUseApiKey, enableCustomInstance]);
 
   // 2) Refresh périodique (toutes les 5 minutes, utilise le cache si pas expiré)
   useEffect(() => {
-    const timer = setInterval(() => fetchAllInstancesWithOnline(), CACHE_TTL)
+    const timer = setInterval(() => fetchAllInstancesWithOnline(), CACHE_TTL);
     return () => {
-      clearInterval(timer)
-    }
-  }, [instancesSourceUrl, cobaltInstanceUrl, cobaltInstanceUseApiKey, enableCustomInstance])
+      clearInterval(timer);
+    };
+  }, [instancesSourceUrl, cobaltInstanceUrl, cobaltInstanceUseApiKey, enableCustomInstance]);
 
   const handleRefetch = async () => {
     await showToast({
       style: Toast.Style.Animated,
       title: "Check in progress...",
-    })
-    await fetchAllInstancesWithOnline(true)
-    await showToast({ style: Toast.Style.Success, title: "Check complete!" })
-  }
+    });
+    await fetchAllInstancesWithOnline(true);
+    await showToast({ style: Toast.Style.Success, title: "Check complete!" });
+  };
 
   const sortedPublicInstances: InstanceWithOnline[] = useMemo(
     () => publicInstances.slice().sort((a, b) => Number(b.online) - Number(a.online)),
     [publicInstances],
-  )
+  );
 
   function getAccessoriesForInstance(instance: InstanceWithOnline) {
-    const accessories = []
+    const accessories = [];
 
     accessories.push({
       icon: {
@@ -186,7 +182,7 @@ export default function Command() {
         tintColor: instance.online ? Color.Green : Color.Red,
       },
       tooltip: instance.online ? "Online" : "Offline",
-    })
+    });
 
     if (instance.score !== undefined && instance.score < sourceMinScore)
       accessories.push({
@@ -194,14 +190,14 @@ export default function Command() {
           source: instance.score === 0 || instance.score < sourceMinScore ? Icon.Warning : undefined,
           tintColor: Color.Orange,
         },
-      })
+      });
 
     accessories.push({
       text: instance.version ?? "unknown",
       tooltip: `Version: ${instance.version}`,
-    })
+    });
 
-    return accessories.filter(Boolean)
+    return accessories.filter(Boolean);
   }
 
   return (
@@ -342,5 +338,5 @@ export default function Command() {
         ))}
       </List.Section>
     </List>
-  )
+  );
 }
