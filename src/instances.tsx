@@ -16,7 +16,6 @@ function getCustomApiKey(): string | undefined {
   return undefined
 }
 
-// Vérifie le statut online pour chaque instance (public ET custom)
 async function checkInstancesOnline(instances: Instance[]): Promise<InstanceWithOnline[]> {
   return await Promise.all(
     instances.map(async (instance) => {
@@ -110,7 +109,6 @@ export default function Command() {
 
         let customInst: InstanceWithOnline | null = null
         let triedCustom = false
-        // ← Ne crée l'instance custom QUE si la config est activée et l'URL définie
         if (enableCustomInstance && cobaltInstanceUrl && cobaltInstanceUrl.trim() !== "") {
           triedCustom = true
           const customResult = await checkInstancesOnline([
@@ -142,7 +140,6 @@ export default function Command() {
       const customFromCache = data.data.find((i) => i.id === "custom") || null
       const othersFromCache = data.data.filter((i) => i.id !== "custom")
       setCustomInstance(customFromCache)
-      // Flag: a-t-on tenté la config custom ?
       setCustomInstanceTried(enableCustomInstance && Boolean(cobaltInstanceUrl && cobaltInstanceUrl.trim() !== ""))
       setPublicInstances(othersFromCache)
       setIsLoading(false)
@@ -151,15 +148,18 @@ export default function Command() {
     setIsLoading(false)
   }
 
-  // Chargement initial et toutes les 5 minutes
+  // 1) Fetch forcé à l'ouverture (toujours, même si cache)
   useEffect(() => {
-    let timer: NodeJS.Timeout
-    ;(async () => {
-      await fetchAllInstancesWithOnline()
-      timer = setInterval(() => fetchAllInstancesWithOnline(), CACHE_TTL)
-    })()
+    fetchAllInstancesWithOnline(true) // lancement systématique en force !
+    // Pas de timer ici : un seul appel au tout début
+    // eslint-disable-next-line
+  }, [instancesSourceUrl, cobaltInstanceUrl, cobaltInstanceUseApiKey, enableCustomInstance])
+
+  // 2) Refresh périodique (toutes les 5 minutes, utilise le cache si pas expiré)
+  useEffect(() => {
+    const timer = setInterval(() => fetchAllInstancesWithOnline(), CACHE_TTL)
     return () => {
-      if (timer) clearInterval(timer)
+      clearInterval(timer)
     }
   }, [instancesSourceUrl, cobaltInstanceUrl, cobaltInstanceUseApiKey, enableCustomInstance])
 
@@ -219,70 +219,59 @@ export default function Command() {
       }
     >
       <List.Section title="Custom Instance">
-        {
-          // Premier cas : config activée ET url définie ET résultat dispo
-          enableCustomInstance && cobaltInstanceUrl && cobaltInstanceUrl.trim() !== "" && customInstance ? (
-            <List.Item
-              title={
-                customInstance.name && customInstance.name.toLowerCase() !== "none"
-                  ? customInstance.name
-                  : customInstance.api
-              }
-              id="custom"
-              accessories={getAccessoriesForInstance(customInstance) as List.Item.Accessory[]}
-              actions={
-                <ActionPanel>
-                  <Action title="Refetch Data" onAction={handleRefetch} />
-                </ActionPanel>
-              }
-              detail={
-                <List.Item.Detail
-                  metadata={
-                    <List.Item.Detail.Metadata>
-                      <List.Item.Detail.Metadata.Label title="URL" text={customInstance.api} />
-                      <List.Item.Detail.Metadata.Label
-                        title="Online"
-                        text={customInstance.online ? "Yes" : "No"}
-                        icon={
-                          customInstance.online
-                            ? { source: Icon.Link, tintColor: Color.Green }
-                            : { source: Icon.Link, tintColor: Color.Red }
-                        }
-                      />
-                      <List.Item.Detail.Metadata.Label title="Version" text={customInstance.version ?? "-"} />
-                      <List.Item.Detail.Metadata.Label
-                        title="Use API Key"
-                        text={customInstance.apiKey ? "Yes" : "No"}
-                      />
-                      <List.Item.Detail.Metadata.Label
-                        title="Frontend ?"
-                        text={customInstance.frontend ? "Yes" : "No"}
-                      />
-                      {customInstance.services && customInstance.services.length > 0 && (
-                        <List.Item.Detail.Metadata.TagList title="Services">
-                          {customInstance.services.map((s) => (
-                            <List.Item.Detail.Metadata.TagList.Item key={s} text={s} />
-                          ))}
-                        </List.Item.Detail.Metadata.TagList>
-                      )}
-                    </List.Item.Detail.Metadata>
-                  }
-                />
-              }
-            />
-          ) : enableCustomInstance && cobaltInstanceUrl && cobaltInstanceUrl.trim() !== "" && customInstanceTried ? (
-            // config activée, url définie, mais fetch n'a rien donné
-            <List.Item
-              id="no-custom"
-              title="Custom instance unreachable or misconfigured"
-              subtitle={cobaltInstanceUrl}
-              icon={Icon.Warning}
-            />
-          ) : (
-            // config désactivée ou rien renseigné
-            <List.Item id="no-custom" title="No Custom Instance configured" icon={Icon.Minus} />
-          )
-        }
+        {enableCustomInstance && cobaltInstanceUrl && cobaltInstanceUrl.trim() !== "" && customInstance ? (
+          <List.Item
+            title={
+              customInstance.name && customInstance.name.toLowerCase() !== "none"
+                ? customInstance.name
+                : customInstance.api
+            }
+            id="custom"
+            accessories={getAccessoriesForInstance(customInstance) as List.Item.Accessory[]}
+            actions={
+              <ActionPanel>
+                <Action title="Refetch Data" onAction={handleRefetch} />
+              </ActionPanel>
+            }
+            detail={
+              <List.Item.Detail
+                metadata={
+                  <List.Item.Detail.Metadata>
+                    <List.Item.Detail.Metadata.Label title="URL" text={customInstance.api} />
+                    <List.Item.Detail.Metadata.Label
+                      title="Online"
+                      text={customInstance.online ? "Yes" : "No"}
+                      icon={
+                        customInstance.online
+                          ? { source: Icon.Link, tintColor: Color.Green }
+                          : { source: Icon.Link, tintColor: Color.Red }
+                      }
+                    />
+                    <List.Item.Detail.Metadata.Label title="Version" text={customInstance.version ?? "-"} />
+                    <List.Item.Detail.Metadata.Label title="Use API Key" text={customInstance.apiKey ? "Yes" : "No"} />
+                    <List.Item.Detail.Metadata.Label title="Frontend ?" text={customInstance.frontend ? "Yes" : "No"} />
+                    {customInstance.services && customInstance.services.length > 0 && (
+                      <List.Item.Detail.Metadata.TagList title="Services">
+                        {customInstance.services.map((s) => (
+                          <List.Item.Detail.Metadata.TagList.Item key={s} text={s} />
+                        ))}
+                      </List.Item.Detail.Metadata.TagList>
+                    )}
+                  </List.Item.Detail.Metadata>
+                }
+              />
+            }
+          />
+        ) : enableCustomInstance && cobaltInstanceUrl && cobaltInstanceUrl.trim() !== "" && customInstanceTried ? (
+          <List.Item
+            id="no-custom"
+            title="Custom instance unreachable or misconfigured"
+            subtitle={cobaltInstanceUrl}
+            icon={Icon.Warning}
+          />
+        ) : (
+          <List.Item id="no-custom" title="No Custom Instance configured" icon={Icon.Minus} />
+        )}
       </List.Section>
 
       <List.Section title="Public Instances">
