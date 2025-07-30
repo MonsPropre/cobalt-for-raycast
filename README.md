@@ -21,7 +21,7 @@
 
 Cobalt for Raycast is an extension that allows you to use [cobalt.tools](https://cobalt.tools) through Raycast.
 
-![Cobalt for Raycast](./metadata/cobalt-for-raycast-2.png)
+![Cobalt for Raycast](.github/cfr-screenshot.png)
 
 ## Commands
 
