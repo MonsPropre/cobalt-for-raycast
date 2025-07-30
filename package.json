@@ -77,7 +77,7 @@
       "name": "instancesSourceUrl",
       "title": "Instances Source URL",
       "description": "Instances Source URL",
-      "default": "https://instances.cobalt.best/api/instances.json",
+      "default": "https://instances.cobalt.best/instances.json",
       "type": "textfield",
       "required": false
     },

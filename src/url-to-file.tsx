@@ -193,7 +193,7 @@ export default function Command() {
     cobaltInstanceUrl,
     cobaltInstanceUseApiKey,
     cobaltInstanceApiKey,
-    instancesSourceUrl = "https://instances.cobalt.best/api/instances.json",
+    instancesSourceUrl = "https://instances.cobalt.best/instances.json",
     sourceMinScore = 50,
   } = getPreferenceValues()
 

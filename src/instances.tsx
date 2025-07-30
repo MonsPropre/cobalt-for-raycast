@@ -10,8 +10,11 @@ type CachedInstancesStatus = {
   timestamp: number
   data: InstanceWithOnline[]
 }
-
 type InstanceWithOnline = Instance & { online: boolean }
+
+function getCustomApiKey(): string | undefined {
+  return undefined
+}
 
 // Vérifie le statut online pour chaque instance (public ET custom)
 async function checkInstancesOnline(instances: Instance[]): Promise<InstanceWithOnline[]> {
@@ -40,7 +43,6 @@ async function checkInstancesOnline(instances: Instance[]): Promise<InstanceWith
       } catch {
         online = false
       }
-      // retourne l'instance fusionnée avec online et les valeurs maj si dispo
       return {
         ...instance,
         version: version ?? instance.version,
@@ -53,7 +55,8 @@ async function checkInstancesOnline(instances: Instance[]): Promise<InstanceWith
 
 export default function Command() {
   const {
-    instancesSourceUrl = "https://instances.cobalt.best/api/instances.json",
+    enableCustomInstance,
+    instancesSourceUrl = "https://instances.cobalt.best/instances.json",
     cobaltInstanceUrl,
     cobaltInstanceUseApiKey,
     sourceMinScore: srcMinScore,
@@ -63,20 +66,21 @@ export default function Command() {
 
   const [publicInstances, setPublicInstances] = useState<InstanceWithOnline[]>([])
   const [customInstance, setCustomInstance] = useState<InstanceWithOnline | null>(null)
+  const [customInstanceTried, setCustomInstanceTried] = useState<boolean>(false)
   const [error, setError] = useState<Error | null>(null)
   const [isLoading, setIsLoading] = useState<boolean>(true)
   const [selection, setSelection] = useState<string | null>(null)
 
   useEffect(() => {
-    ;(async () => {
-      if (error) {
+    if (error) {
+      ;(async () => {
         await showToast({
           style: Toast.Style.Failure,
           title: "Something went wrong",
           message: error.message,
         })
-      }
-    })()
+      })()
+    }
   }, [error])
 
   const fetchAllInstancesWithOnline = async (force = false) => {
@@ -92,7 +96,6 @@ export default function Command() {
       }
     }
 
-    // vérifie si cache est périmé ou inexistant ou on veut forcer
     if (force || !data || Date.now() - data.timestamp > CACHE_TTL) {
       try {
         const resp = await fetch(instancesSourceUrl, {
@@ -103,24 +106,23 @@ export default function Command() {
         })
         const rawList = await resp.json()
 
-        // 2. Fetch leur statut online (en parallèle)
         const fullPublic = await checkInstancesOnline(rawList)
 
-        // 3. Custom Instance à part si renseignée
         let customInst: InstanceWithOnline | null = null
-        if (cobaltInstanceUrl) {
+        let triedCustom = false
+        // ← Ne crée l'instance custom QUE si la config est activée et l'URL définie
+        if (enableCustomInstance && cobaltInstanceUrl && cobaltInstanceUrl.trim() !== "") {
+          triedCustom = true
           const customResult = await checkInstancesOnline([
             {
               id: "custom",
-              name: "None",
+              name: cobaltInstanceUrl,
               api: cobaltInstanceUrl,
-              apiKey: cobaltInstanceUseApiKey ? "true" : undefined,
+              apiKey: cobaltInstanceUseApiKey ? getCustomApiKey() : undefined,
             },
           ])
           customInst = customResult[0]
         }
-
-        // 4. Cache l'ensemble
         cache.set(
           CACHE_PREFIX + "all-instances",
           JSON.stringify({
@@ -130,21 +132,19 @@ export default function Command() {
         )
         setPublicInstances(fullPublic)
         setCustomInstance(customInst)
+        setCustomInstanceTried(triedCustom)
         setIsLoading(false)
         return
       } catch (err) {
         setError(err as Error)
       }
     } else if (data) {
-      // Si cache est OK
-      const [maybeCustom, ...others] = data.data
-      if (maybeCustom?.id === "custom") {
-        setCustomInstance(maybeCustom)
-        setPublicInstances(others)
-      } else {
-        setCustomInstance(null)
-        setPublicInstances([maybeCustom, ...others])
-      }
+      const customFromCache = data.data.find((i) => i.id === "custom") || null
+      const othersFromCache = data.data.filter((i) => i.id !== "custom")
+      setCustomInstance(customFromCache)
+      // Flag: a-t-on tenté la config custom ?
+      setCustomInstanceTried(enableCustomInstance && Boolean(cobaltInstanceUrl && cobaltInstanceUrl.trim() !== ""))
+      setPublicInstances(othersFromCache)
       setIsLoading(false)
       return
     }
@@ -153,12 +153,15 @@ export default function Command() {
 
   // Chargement initial et toutes les 5 minutes
   useEffect(() => {
+    let timer: NodeJS.Timeout
     ;(async () => {
       await fetchAllInstancesWithOnline()
-      const timer = setInterval(() => fetchAllInstancesWithOnline(), CACHE_TTL)
-      return () => clearInterval(timer)
+      timer = setInterval(() => fetchAllInstancesWithOnline(), CACHE_TTL)
     })()
-  }, [instancesSourceUrl, cobaltInstanceUrl, cobaltInstanceUseApiKey])
+    return () => {
+      if (timer) clearInterval(timer)
+    }
+  }, [instancesSourceUrl, cobaltInstanceUrl, cobaltInstanceUseApiKey, enableCustomInstance])
 
   const handleRefetch = async () => {
     await showToast({
@@ -173,8 +176,6 @@ export default function Command() {
     () => publicInstances.slice().sort((a, b) => Number(b.online) - Number(a.online)),
     [publicInstances],
   )
-
-  const sortedCustomInstance = customInstance ? customInstance : undefined
 
   function getAccessoriesForInstance(instance: InstanceWithOnline) {
     const accessories = []
@@ -200,14 +201,16 @@ export default function Command() {
       tooltip: `Version: ${instance.version}`,
     })
 
-    return accessories.filter(Boolean) // retire undefined
+    return accessories.filter(Boolean)
   }
 
   return (
     <List
       isLoading={isLoading}
       onSelectionChange={setSelection}
-      isShowingDetail={selection !== null && selection !== "empty" && selection !== "errored"}
+      isShowingDetail={
+        selection !== null && selection !== "empty" && selection !== "errored" && selection !== "no-custom"
+      }
       searchBarPlaceholder="Search instances..."
       actions={
         <ActionPanel>
@@ -216,57 +219,70 @@ export default function Command() {
       }
     >
       <List.Section title="Custom Instance">
-        {sortedCustomInstance && (
-          <List.Item
-            title={
-              sortedCustomInstance.name.toLowerCase() !== "none" ? sortedCustomInstance.name : sortedCustomInstance.api
-            }
-            id="custom"
-            accessories={getAccessoriesForInstance(sortedCustomInstance) as List.Item.Accessory[]}
-            actions={
-              <ActionPanel>
-                <Action title="Refetch Data" onAction={handleRefetch} />
-              </ActionPanel>
-            }
-            detail={
-              <List.Item.Detail
-                metadata={
-                  <List.Item.Detail.Metadata>
-                    <List.Item.Detail.Metadata.Label title="URL" text={sortedCustomInstance.api} />
-                    <List.Item.Detail.Metadata.Label
-                      title="Online"
-                      text={sortedCustomInstance.online ? "Yes" : "No"}
-                      icon={
-                        sortedCustomInstance.online
-                          ? {
-                              source: Icon.Link,
-                              tintColor: Color.Green,
-                            }
-                          : { source: Icon.Link, tintColor: Color.Red }
-                      }
-                    />
-                    <List.Item.Detail.Metadata.Label title="Version" text={sortedCustomInstance.version ?? "-"} />
-                    <List.Item.Detail.Metadata.Label
-                      title="Use API Key"
-                      text={sortedCustomInstance.apiKey ? "Yes" : "No"}
-                    />
-                    <List.Item.Detail.Metadata.Label
-                      title="Frontend ?"
-                      text={sortedCustomInstance.frontend ? "Yes" : "No"}
-                    />
-                    {sortedCustomInstance.services && sortedCustomInstance.services.length > 0 && (
-                      <List.Item.Detail.Metadata.TagList title="Services">
-                        {sortedCustomInstance.services.map((s) => (
-                          <List.Item.Detail.Metadata.TagList.Item key={s} text={s} />
-                        ))}
-                      </List.Item.Detail.Metadata.TagList>
-                    )}
-                  </List.Item.Detail.Metadata>
-                }
-              />
-            }
-          />
-        )}
+        {
+          // Premier cas : config activée ET url définie ET résultat dispo
+          enableCustomInstance && cobaltInstanceUrl && cobaltInstanceUrl.trim() !== "" && customInstance ? (
+            <List.Item
+              title={
+                customInstance.name && customInstance.name.toLowerCase() !== "none"
+                  ? customInstance.name
+                  : customInstance.api
+              }
+              id="custom"
+              accessories={getAccessoriesForInstance(customInstance) as List.Item.Accessory[]}
+              actions={
+                <ActionPanel>
+                  <Action title="Refetch Data" onAction={handleRefetch} />
+                </ActionPanel>
+              }
+              detail={
+                <List.Item.Detail
+                  metadata={
+                    <List.Item.Detail.Metadata>
+                      <List.Item.Detail.Metadata.Label title="URL" text={customInstance.api} />
+                      <List.Item.Detail.Metadata.Label
+                        title="Online"
+                        text={customInstance.online ? "Yes" : "No"}
+                        icon={
+                          customInstance.online
+                            ? { source: Icon.Link, tintColor: Color.Green }
+                            : { source: Icon.Link, tintColor: Color.Red }
+                        }
+                      />
+                      <List.Item.Detail.Metadata.Label title="Version" text={customInstance.version ?? "-"} />
+                      <List.Item.Detail.Metadata.Label
+                        title="Use API Key"
+                        text={customInstance.apiKey ? "Yes" : "No"}
+                      />
+                      <List.Item.Detail.Metadata.Label
+                        title="Frontend ?"
+                        text={customInstance.frontend ? "Yes" : "No"}
+                      />
+                      {customInstance.services && customInstance.services.length > 0 && (
+                        <List.Item.Detail.Metadata.TagList title="Services">
+                          {customInstance.services.map((s) => (
+                            <List.Item.Detail.Metadata.TagList.Item key={s} text={s} />
+                          ))}
+                        </List.Item.Detail.Metadata.TagList>
+                      )}
+                    </List.Item.Detail.Metadata>
+                  }
+                />
+              }
+            />
+          ) : enableCustomInstance && cobaltInstanceUrl && cobaltInstanceUrl.trim() !== "" && customInstanceTried ? (
+            // config activée, url définie, mais fetch n'a rien donné
+            <List.Item
+              id="no-custom"
+              title="Custom instance unreachable or misconfigured"
+              subtitle={cobaltInstanceUrl}
+              icon={Icon.Warning}
+            />
+          ) : (
+            // config désactivée ou rien renseigné
+            <List.Item id="no-custom" title="No Custom Instance configured" icon={Icon.Minus} />
+          )
+        }
       </List.Section>
 
       <List.Section title="Public Instances">
@@ -306,10 +322,7 @@ export default function Command() {
                       text={instance.online ? "Yes" : "No"}
                       icon={
                         instance.online
-                          ? {
-                              source: Icon.Link,
-                              tintColor: Color.Green,
-                            }
+                          ? { source: Icon.Link, tintColor: Color.Green }
                           : { source: Icon.Link, tintColor: Color.Red }
                       }
                     />
@@ -321,10 +334,7 @@ export default function Command() {
                       text={instance.score?.toFixed(0) ?? "-"}
                       icon={
                         instance.score === 0 || (instance.score !== undefined && instance.score < sourceMinScore)
-                          ? {
-                              source: Icon.Warning,
-                              tintColor: Color.Orange,
-                            }
+                          ? { source: Icon.Warning, tintColor: Color.Orange }
                           : undefined
                       }
                     />
