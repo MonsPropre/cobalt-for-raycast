@@ -1,355 +1,382 @@
 import {
-  Action,
-  ActionPanel,
-  Form,
-  getPreferenceValues,
-  Clipboard,
-  showToast,
-  Toast,
-  confirmAlert,
-  open,
-  popToRoot,
-  Icon,
+    Action,
+    ActionPanel,
+    Form,
+    getPreferenceValues,
+    Clipboard,
+    showToast,
+    Toast,
+    confirmAlert,
+    open,
+    popToRoot,
+    Icon,
 } from "@raycast/api";
-import { useForm, FormValidation, useFetch, showFailureToast } from "@raycast/utils";
-import { useEffect } from "react";
+import {useForm, FormValidation, useFetch, showFailureToast} from "@raycast/utils";
+import {useEffect} from "react";
 import * as Errors from "./utils/Error.json";
-import { CobaltError, FormValues, Instance } from "./utils/Types";
+import {CobaltError, FormValues, Instance} from "./utils/Types";
 
 type ErrorKey = keyof typeof Errors;
 
 function getErrorMessage(key: ErrorKey) {
-  return Errors[key];
+    return Errors[key];
 }
 
 function getCobaltError(error: CobaltError) {
-  let errorMessage = getErrorMessage(error.code as ErrorKey);
-  if (error.context) {
-    errorMessage = Object.keys(error.context).reduce((acc, key) => {
-      const k = key as keyof typeof error.context;
-      const regex = new RegExp(`{{\\s*${k}\\s*}}`, "g");
-      return acc.replace(regex, error.context[k]);
-    }, errorMessage);
-  }
-  return errorMessage;
+    let errorMessage = getErrorMessage(error.code as ErrorKey);
+    if (error.context) {
+        errorMessage = Object.keys(error.context).reduce((acc, key) => {
+            const k = key as keyof typeof error.context;
+            const regex = new RegExp(`{{\\s*${k}\\s*}}`, "g");
+            return acc.replace(regex, error.context[k]);
+        }, errorMessage);
+    }
+    return errorMessage;
 }
 
 function fixProtocol(url: string, protocol: string) {
-  if (/^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(url)) {
-    return url;
-  }
-  if (!protocol.endsWith("://")) {
-    protocol += "://";
-  }
-  return protocol + url;
+    if (/^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(url)) {
+        return url;
+    }
+    if (!protocol.endsWith("://")) {
+        protocol += "://";
+    }
+    return protocol + url;
 }
 
 function stripProtocol(url: string) {
-  return url.replace(/^\w+:\/\//, "");
+    return url.replace(/^\w+:\/\//, "");
 }
 
 async function download(
-  values: FormValues,
-  instance:
-    | Instance
-    | undefined
-    | {
+    values: FormValues,
+    instance:
+        | Instance
+        | undefined
+        | {
         id: string;
         name: string;
         api: string;
         apiKey: string;
         protocol?: string;
-      },
+    },
 ) {
-  const apiUrl = instance?.api;
-  const apiKey = instance?.apiKey;
+    const apiUrl = instance?.api;
+    const apiKey = instance?.apiKey;
 
-  await showToast({
-    style: Toast.Style.Animated,
-    title: "Processing",
-  });
-
-  if (apiUrl) {
-    const url = fixProtocol(apiUrl, instance?.protocol ?? "https");
-    await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        ...(apiKey !== undefined ? { Authorization: `Api-Key ${apiKey}` } : {}),
-        "User-Agent": "MonsPropre/cobalt-for-raycast",
-      },
-      body: JSON.stringify({
-        url: values.url,
-        downloadMode: values.downloadMode,
-        filenameStyle: "nerdy",
-      }),
-      signal: AbortSignal.timeout(2500),
-    })
-      .then(async (response) => {
-        const resJson = await response.json();
-        if (!response.ok) {
-          throw resJson;
-        }
-        return resJson;
-      })
-      .then(async (data) => {
-        if (data && data.status === "redirect") {
-          await showToast({
-            style: Toast.Style.Animated,
-            title: "Redirecting",
-            message: `Redirecting to ${data.url}`,
-          });
-          await confirmAlert({
-            title: `Open ${data?.filename} ?`,
-            primaryAction: {
-              title: "Open",
-              onAction: async () => {
-                await showToast({
-                  style: Toast.Style.Success,
-                  title: "Download started",
-                });
-                await popToRoot();
-                await open(data.url);
-              },
-            },
-            dismissAction: {
-              title: "Cancel",
-              onAction: async () => {
-                await showFailureToast(new Error("Download canceled"), {
-                  title: "Download canceled",
-                  message: "",
-                });
-              },
-            },
-          });
-        }
-        if (data && data.status === "tunnel") {
-          await showToast({
-            style: Toast.Style.Animated,
-            title: "Tunnel created",
-            message: `Tunnel ${new URL(data.url).searchParams.get("id")} created.`,
-          });
-          await confirmAlert({
-            title: `Download ${data?.filename} ?`,
-            primaryAction: {
-              title: "Download",
-              onAction: async () => {
-                await showToast({
-                  style: Toast.Style.Success,
-                  title: "Download started",
-                });
-                await popToRoot();
-                await open(data.url);
-              },
-            },
-            dismissAction: {
-              title: "Cancel",
-              onAction: async () => {
-                await showFailureToast(new Error("Download canceled"), {
-                  title: "Download canceled",
-                  message: "",
-                });
-              },
-            },
-          });
-        }
-      })
-      .catch(async (error) => {
-        if (error?.status === "error") {
-          await showFailureToast(error, {
-            title: "Failed to download",
-            message: error?.message ?? getCobaltError(error?.error),
-          });
-          return;
-        }
-        if (error?.name) {
-          await showFailureToast(error, {
-            title: "Failed to download",
-            message: error?.message ?? getCobaltError(error?.error),
-          });
-          return;
-        }
-        console.error({
-          name: error.name,
-        });
-        await showFailureToast(error, {
-          title: error?.name || "Failed to download",
-          message: getErrorMessage(error?.message),
-        });
-      });
-  } else {
-    await showFailureToast(new Error("Failed to download"), {
-      title: "Failed to download",
-      message: "API URL not found",
+    await showToast({
+        style: Toast.Style.Animated,
+        title: "Processing",
     });
-  }
+
+    if (apiUrl) {
+        const url = fixProtocol(apiUrl, instance?.protocol ?? "https");
+        await fetch(url, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Accept: "application/json",
+                ...(apiKey !== undefined ? {Authorization: `Api-Key ${apiKey}`} : {}),
+                "User-Agent": "MonsPropre/cobalt-for-raycast",
+            },
+            body: JSON.stringify({
+                url: values.url,
+                downloadMode: values.downloadMode,
+                filenameStyle: "nerdy",
+            }),
+            signal: AbortSignal.timeout(2500),
+        })
+            .then(async (response) => {
+                const resJson = await response.json();
+                if (!response.ok) {
+                    throw resJson;
+                }
+                return resJson;
+            })
+            .then(async (data) => {
+                if (data && data.status === "redirect") {
+                    await showToast({
+                        style: Toast.Style.Animated,
+                        title: "Redirecting",
+                        message: `Redirecting to ${data.url}`,
+                    });
+                    await confirmAlert({
+                        title: `Open ${data?.filename} ?`,
+                        primaryAction: {
+                            title: "Open",
+                            onAction: async () => {
+                                await showToast({
+                                    style: Toast.Style.Success,
+                                    title: "Download started",
+                                });
+                                await popToRoot();
+                                await open(data.url);
+                            },
+                        },
+                        dismissAction: {
+                            title: "Cancel",
+                            onAction: async () => {
+                                await showFailureToast(new Error("Download canceled"), {
+                                    title: "Download canceled",
+                                    message: "",
+                                });
+                            },
+                        },
+                    });
+                }
+                if (data && data.status === "tunnel") {
+                    await showToast({
+                        style: Toast.Style.Animated,
+                        title: "Tunnel created",
+                        message: `Tunnel ${new URL(data.url).searchParams.get("id")} created.`,
+                    });
+                    await confirmAlert({
+                        title: `Download ${data?.filename} ?`,
+                        primaryAction: {
+                            title: "Download",
+                            onAction: async () => {
+                                await showToast({
+                                    style: Toast.Style.Success,
+                                    title: "Download started",
+                                });
+                                await popToRoot();
+                                await open(data.url);
+                            },
+                        },
+                        dismissAction: {
+                            title: "Cancel",
+                            onAction: async () => {
+                                await showFailureToast(new Error("Download canceled"), {
+                                    title: "Download canceled",
+                                    message: "",
+                                });
+                            },
+                        },
+                    });
+                }
+            })
+            .catch(async (error) => {
+                if (error?.status === "error") {
+                    await showFailureToast(error, {
+                        title: "Failed to download",
+                        message: error?.message ?? getCobaltError(error?.error),
+                    });
+                    return;
+                }
+                if (error?.name) {
+                    await showFailureToast(error, {
+                        title: "Failed to download",
+                        message: error?.message ?? getCobaltError(error?.error),
+                    });
+                    return;
+                }
+                console.error({
+                    name: error.name,
+                });
+                await showFailureToast(error, {
+                    title: error?.name || "Failed to download",
+                    message: getErrorMessage(error?.message),
+                });
+            });
+    } else {
+        await showFailureToast(new Error("Failed to download"), {
+            title: "Failed to download",
+            message: "API URL not found",
+        });
+    }
 }
 
 export default function Command() {
-  const {
-    enableCustomInstance,
-    cobaltInstanceUrl,
-    cobaltInstanceUseApiKey,
-    cobaltInstanceApiKey,
-    instancesSourceUrl = "https://instances.cobalt.best/instances.json",
-    sourceMinScore = 50,
-  } = getPreferenceValues();
+    const {
+        enableCustomInstance,
+        cobaltInstanceUrl,
+        cobaltInstanceUseApiKey,
+        cobaltInstanceApiKey,
+        instancesSourceUrl = "https://instances.cobalt.best/instances.json",
+        sourceMinScore = 50,
+    } = getPreferenceValues();
 
-  const { data, revalidate } = useFetch<Instance[]>(instancesSourceUrl, {
-    headers: {
-      "User-Agent": "MonsPropre/cobalt-for-raycast",
-    },
-    keepPreviousData: true,
-  });
+    const {data, revalidate} = useFetch<Instance[]>(instancesSourceUrl, {
+        headers: {
+            "User-Agent": "MonsPropre/cobalt-for-raycast",
+        },
+        keepPreviousData: true,
+    });
 
-  let instances: Instance[] = [];
-  if (typeof data === "string") {
-    try {
-      instances = JSON.parse(data);
-    } catch (error) {
-      instances = [];
-      console.error("Failed to parse instances JSON:", error);
-    }
-  } else if (Array.isArray(data)) {
-    instances = data;
-  }
-
-  let customInstanceValue: string | undefined = undefined;
-  if (enableCustomInstance && cobaltInstanceUrl) {
-    const exists = instances.some((inst) => inst.api === cobaltInstanceUrl || inst.id === "custom");
-    if (!exists) {
-      instances.unshift({
-        id: "custom",
-        name: "Custom",
-        api: cobaltInstanceUrl,
-        apiKey: cobaltInstanceUseApiKey ? cobaltInstanceApiKey : undefined,
-      });
-    }
-    customInstanceValue = cobaltInstanceUrl;
-  }
-
-  const filteredPublicInstances = instances.filter(
-    (instance) =>
-      instance.version !== null &&
-      instance.version !== undefined &&
-      !(
-        enableCustomInstance &&
-        cobaltInstanceUrl &&
-        (instance.api === cobaltInstanceUrl || instance.id === "custom" || instance.frontend === cobaltInstanceUrl)
-      ) &&
-      (Number.isNaN(Number(sourceMinScore)) ? 50 : Number(sourceMinScore)),
-  );
-
-  const { handleSubmit, itemProps, reset } = useForm<FormValues>({
-    async onSubmit(values) {
-      await download(
-        values,
-        instances.find((instance) => instance.api === values.instance || instance.id === values.instance),
-      );
-    },
-    validation: {
-      url: (value) => {
+    let instances: Instance[] = [];
+    if (typeof data === "string") {
         try {
-          const url = new URL(value as string);
-          if (url.protocol !== "http:" && url.protocol !== "https:") {
-            return "Invalid protocol";
-          }
-          return;
-        } catch (_) {
-          return "Invalid URL";
+            instances = JSON.parse(data);
+        } catch (error) {
+            instances = [];
+            console.error("Failed to parse instances JSON:", error);
         }
-      },
-      downloadMode: FormValidation.Required,
-    },
-  });
+    } else if (Array.isArray(data)) {
+        instances = data;
+    }
 
-  useEffect(() => {
-    (async () => {
-      const text = await Clipboard.readText();
-      try {
-        const url = new URL(text as string);
-        if (url.protocol === "http:" || url.protocol === "https:") {
-          await showToast({
-            style: Toast.Style.Success,
-            title: "Loaded URL from Clipboard",
-            message: text,
-          });
-          reset({ url: text, downloadMode: "auto" });
+    let customInstanceValue: string | undefined = undefined;
+    if (enableCustomInstance && cobaltInstanceUrl) {
+        const exists = instances.some((inst) => inst.api === cobaltInstanceUrl || inst.id === "custom");
+        if (!exists) {
+            instances.unshift({
+                id: "custom",
+                name: "Custom",
+                api: cobaltInstanceUrl,
+                apiKey: cobaltInstanceUseApiKey ? cobaltInstanceApiKey : undefined,
+            });
         }
-      } catch (_) {
-        // ignore
-      }
-    })();
-  }, [reset]);
+        customInstanceValue = cobaltInstanceUrl;
+    }
 
-  return (
-    <Form
-      actions={
-        <ActionPanel>
-          <Action.SubmitForm title="Submit" onSubmit={handleSubmit} />
-          <Action
-            title="Reload Instances"
-            onAction={async () => {
-              const toast = await showToast({
-                style: Toast.Style.Animated,
-                title: "Reloading instances",
-              });
-              revalidate();
-              setTimeout(async () => await toast.hide(), 50);
-            }}
-            icon={Icon.RotateClockwise}
-          />
-        </ActionPanel>
-      }
-    >
-      <Form.Dropdown title="Instance" {...itemProps.instance}>
-        {enableCustomInstance && (
-          <Form.Dropdown.Section title="Custom Instance">
-            {customInstanceValue ? (
-              <Form.Dropdown.Item key="custom" value={customInstanceValue} title={stripProtocol(customInstanceValue)} />
-            ) : (
-              <Form.Dropdown.Item
-                key="missingcustom"
-                value="missingcustom"
-                title={"Missing custom Instance"}
-                icon={Icon.QuestionMark}
-              />
-            )}
-          </Form.Dropdown.Section>
-        )}
+    const filteredPublicInstances = instances.filter(
+        (instance) =>
+            instance.version !== null &&
+            instance.version !== undefined &&
+            !(
+                enableCustomInstance &&
+                cobaltInstanceUrl &&
+                (instance.api === cobaltInstanceUrl || instance.id === "custom" || instance.frontend === cobaltInstanceUrl)
+            ) &&
+            (Number.isNaN(Number(sourceMinScore)) ? 50 : Number(sourceMinScore)),
+    );
 
-        <Form.Dropdown.Section title="Public Instances">
-          {filteredPublicInstances
-            .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-            .filter(
-              (instance) =>
-                instance.score !== undefined &&
-                instance.score >= (Number.isNaN(Number(sourceMinScore)) ? 50 : Number(sourceMinScore)),
-            )
-            .map((instance, idx) => (
-              <Form.Dropdown.Item
-                key={instance.id || idx}
-                value={instance.api}
-                title={`${instance.api} | ${instance.score}%`}
-              />
-            ))}
-        </Form.Dropdown.Section>
+    const {handleSubmit, itemProps, reset} = useForm<FormValues>({
+        async onSubmit(values) {
+            await download(
+                values,
+                instances.find((instance) => instance.api === values.instance || instance.id === values.instance),
+            );
+        },
+        validation: {
+            url: (value) => {
+                try {
+                    const url = new URL(value as string);
+                    if (url.protocol !== "http:" && url.protocol !== "https:") {
+                        return "Invalid protocol";
+                    }
+                    return;
+                } catch (_) {
+                    return "Invalid URL";
+                }
+            },
+            downloadMode: FormValidation.Required,
+        },
+    });
 
-        {!instances.length && (
-          <Form.Dropdown.Section title="Instances">
-            <Form.Dropdown.Item value="" title="(No instances found)" />
-          </Form.Dropdown.Section>
-        )}
-      </Form.Dropdown>
+    useEffect(() => {
+        (async () => {
+            const text = await Clipboard.readText();
+            try {
+                const url = new URL(text as string);
+                if (url.protocol === "http:" || url.protocol === "https:") {
+                    await showToast({
+                        style: Toast.Style.Success,
+                        title: "Loaded URL from Clipboard",
+                        message: text,
+                    });
+                    reset({url: text, downloadMode: "auto"});
+                }
+            } catch (_) {
+                // ignore
+            }
+        })();
+    }, [reset]);
 
-      <Form.TextField title="URL" placeholder="https://www.youtube.com/watch?v=ykaj0pS4A1A" {...itemProps.url} />
+    return (
+        <Form
+            actions={
+                <ActionPanel>
+                    <Action.SubmitForm title="Submit" onSubmit={handleSubmit}/>
+                    <Action
+                        title="Reload Instances"
+                        onAction={async () => {
+                            const toast = await showToast({
+                                style: Toast.Style.Animated,
+                                title: "Reloading instances",
+                            });
+                            revalidate();
+                            setTimeout(async () => await toast.hide(), 50);
+                        }}
+                        icon={Icon.RotateClockwise}
+                    />
+                </ActionPanel>
+            }
+        >
+            <Form.Dropdown title="Instance" {...itemProps.instance}>
+                {enableCustomInstance && (
+                    <Form.Dropdown.Section title="Custom Instance">
+                        {customInstanceValue ? (
+                            <Form.Dropdown.Item key="custom" value={customInstanceValue}
+                                                title={stripProtocol(customInstanceValue)}/>
+                        ) : (
+                            <Form.Dropdown.Item
+                                key="missingcustom"
+                                value="missingcustom"
+                                title={"Missing custom Instance"}
+                                icon={Icon.QuestionMark}
+                            />
+                        )}
+                    </Form.Dropdown.Section>
+                )}
 
-      <Form.Dropdown title="Download Mode" storeValue {...itemProps.downloadMode}>
-        <Form.Dropdown.Item value="auto" title="Auto" icon="✨" />
-        <Form.Dropdown.Item value="audio" title="Audio" icon="🎶" />
-        <Form.Dropdown.Item value="mute" title="Mute" icon="🔇" />
-      </Form.Dropdown>
-    </Form>
-  );
+                <Form.Dropdown.Section title="Public Instances">
+                    {filteredPublicInstances
+                        .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+                        .filter(
+                            (instance) =>
+                                instance.score !== undefined &&
+                                instance.score >= (Number.isNaN(Number(sourceMinScore)) ? 50 : Number(sourceMinScore)),
+                        )
+                        .map((instance, idx) => (
+                            <Form.Dropdown.Item
+                                key={instance.id || idx}
+                                value={instance.api}
+                                title={`${instance.api} | ${instance.score}%`}
+                            />
+                        ))}
+                </Form.Dropdown.Section>
+
+                {!instances.length && (
+                    <Form.Dropdown.Section title="Instances">
+                        <Form.Dropdown.Item value="" title="(No instances found)"/>
+                    </Form.Dropdown.Section>
+                )}
+            </Form.Dropdown>
+
+            <Form.Dropdown title="Download Mode" storeValue {...itemProps.downloadMode}>
+                <Form.Dropdown.Item value="auto" title="Auto" icon="✨"/>
+                <Form.Dropdown.Item value="audio" title="Audio" icon="🎶"/>
+                <Form.Dropdown.Item value="mute" title="Mute" icon="🔇"/>
+            </Form.Dropdown>
+
+            <Form.TextField title="URL" placeholder="https://www.youtube.com/watch?v=ykaj0pS4A1A" {...itemProps.url} />
+            <Form.Separator/>
+
+            <Form.Dropdown title="Video codec" storeValue {...itemProps.vcodec}>
+                <Form.Dropdown.Item value="h264" title="H.264 (mp4)"/>
+                <Form.Dropdown.Item value="av1" title="AV1 (mp4)"/>
+                <Form.Dropdown.Item value="vp9" title="VP9 (webm)"/>
+            </Form.Dropdown>
+
+            <Form.Dropdown title="Video quality" storeValue {...itemProps.vquality}>
+                <Form.Dropdown.Item value="max" title="Maximum"/>
+                <Form.Dropdown.Item value="2160" title="2160p"/>
+                <Form.Dropdown.Item value="1440" title="1440p"/>
+                <Form.Dropdown.Item value="1080" title="1080p"/>
+                <Form.Dropdown.Item value="720" title="720p"/>
+                <Form.Dropdown.Item value="480" title="480p"/>
+                <Form.Dropdown.Item value="360" title="360p"/>
+                <Form.Dropdown.Item value="240" title="240p"/>
+                <Form.Dropdown.Item value="144" title="144p"/>
+            </Form.Dropdown>
+
+            <Form.Dropdown title="Video quality" storeValue {...itemProps.aformat}>
+                <Form.Dropdown.Item value="best" title="Best"/>
+                <Form.Dropdown.Item value="mp3" title="mp3"/>
+                <Form.Dropdown.Item value="ogg" title="ogg"/>
+                <Form.Dropdown.Item value="wav" title="wav"/>
+            </Form.Dropdown>
+        </Form>
+    );
 }

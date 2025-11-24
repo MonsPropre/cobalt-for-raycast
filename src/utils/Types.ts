@@ -2,6 +2,9 @@ export type FormValues = {
   url: string;
   downloadMode: string;
   instance: string;
+  vcodec: string;
+  vquality: string;
+  aformat: string;
 };
 
 export type CobaltError = {
